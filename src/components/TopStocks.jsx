@@ -121,7 +121,7 @@ function TopStocks({ onStockSelect }) {
             </div>
 
             <div className="demo-notice">
-                <span>Demo data displayed</span>
+                <span>Live market data via yfinance</span>
             </div>
         </div>
     )

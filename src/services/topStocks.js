@@ -1,6 +1,10 @@
 /**
- * Mock data for Top 5 Buy-Rated Stocks
+ * Top Stocks Service - Fetches top buy-rated stocks from API
  */
+
+const API_BASE = '/api';
+
+// Mock data for development fallback
 export const topStocksMockData = [
     {
         symbol: "NVDA",
@@ -65,7 +69,36 @@ export const topStocksMockData = [
 ];
 
 export async function getTopStocks() {
-    // Simulate API delay for realistic feel
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return topStocksMockData;
+    try {
+        const response = await fetch(`${API_BASE}/topstocks`);
+
+        // Check if response is HTML (error from Vite - API not running)
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.log('API not available, using mock data');
+            await new Promise(resolve => setTimeout(resolve, 800));
+            return topStocksMockData;
+        }
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to fetch top stocks');
+        }
+
+        // Return the stocks from API response
+        if (data.stocks && data.stocks.length > 0) {
+            return data.stocks;
+        }
+
+        // Fallback to mock data if no stocks returned
+        console.log('No stocks returned from API, using mock data');
+        return topStocksMockData;
+    } catch (error) {
+        console.error('API Error:', error);
+        // Fallback to mock data if API fails
+        console.log('Falling back to mock data');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return topStocksMockData;
+    }
 }

@@ -1,59 +1,70 @@
 """
-Stock Data Service - Alpha Vantage API Wrapper
+Stock Data Service - yfinance API Wrapper
 Fetches historical price data and company fundamentals
 """
-import requests
+import numpy as np
 from typing import Dict, List, Any, Optional
 
-API_KEY = "5IOBAC4K17O4IB39"
-BASE_URL = "https://www.alphavantage.co/query"
+# Use yfinance for stock data
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
 
 
-def get_daily_prices(symbol: str, outputsize: str = "compact") -> Dict[str, Any]:
+def safe_float(value) -> Optional[float]:
+    """Safely convert value to float, handling None and NaN."""
+    try:
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return None
+        return float(value) if value and value != "None" else None
+    except (ValueError, TypeError):
+        return None
+
+
+def get_daily_prices(symbol: str, period: str = "3mo") -> Dict[str, Any]:
     """
-    Fetch daily OHLCV data for a stock symbol.
+    Fetch daily OHLCV data for a stock symbol using yfinance.
     
     Args:
         symbol: Stock ticker symbol (e.g., 'AAPL')
-        outputsize: 'compact' (100 days) or 'full' (20+ years)
+        period: Time period ('1mo', '3mo', '6mo', '1y', '2y', '5y', 'max')
     
     Returns:
-        Dictionary with date keys and OHLCV values
+        Dictionary with symbol and list of price data
     """
-    params = {
-        "function": "TIME_SERIES_DAILY",
-        "symbol": symbol,
-        "outputsize": outputsize,
-        "apikey": API_KEY
-    }
+    if not YFINANCE_AVAILABLE:
+        return {"error": "yfinance not installed"}
     
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
-    
-    if "Time Series (Daily)" not in data:
-        error_msg = data.get("Note", data.get("Error Message", "Unknown error"))
-        return {"error": error_msg}
-    
-    time_series = data["Time Series (Daily)"]
-    
-    # Convert to a cleaner format
-    prices = []
-    for date, values in sorted(time_series.items(), reverse=True):
-        prices.append({
-            "date": date,
-            "open": float(values["1. open"]),
-            "high": float(values["2. high"]),
-            "low": float(values["3. low"]),
-            "close": float(values["4. close"]),
-            "volume": int(values["5. volume"])
-        })
-    
-    return {"symbol": symbol, "prices": prices}
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return {"error": f"No data found for {symbol}"}
+        
+        prices = []
+        for date, row in hist.iterrows():
+            prices.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
+                "volume": int(row["Volume"])
+            })
+        
+        # Return newest first
+        prices.reverse()
+        return {"symbol": symbol, "prices": prices}
+    except Exception as e:
+        return {"error": f"Failed to fetch data: {str(e)}"}
 
 
 def get_company_overview(symbol: str) -> Dict[str, Any]:
     """
-    Fetch company fundamentals including P/E, EPS, ROE.
+    Fetch company fundamentals including P/E, EPS, ROE using yfinance.
     
     Args:
         symbol: Stock ticker symbol
@@ -61,47 +72,38 @@ def get_company_overview(symbol: str) -> Dict[str, Any]:
     Returns:
         Dictionary with fundamental metrics
     """
-    params = {
-        "function": "OVERVIEW",
-        "symbol": symbol,
-        "apikey": API_KEY
-    }
+    if not YFINANCE_AVAILABLE:
+        return {"error": "yfinance not installed"}
     
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
-    
-    if not data or "Symbol" not in data:
-        return {"error": "Company data not found"}
-    
-    # Extract relevant fundamental metrics
-    def safe_float(value: str) -> Optional[float]:
-        try:
-            return float(value) if value and value != "None" else None
-        except (ValueError, TypeError):
-            return None
-    
-    fundamentals = {
-        "symbol": data.get("Symbol"),
-        "name": data.get("Name"),
-        "sector": data.get("Sector"),
-        "industry": data.get("Industry"),
-        "pe_ratio": safe_float(data.get("PERatio")),
-        "eps": safe_float(data.get("EPS")),
-        "roe": safe_float(data.get("ReturnOnEquityTTM")),
-        "market_cap": safe_float(data.get("MarketCapitalization")),
-        "dividend_yield": safe_float(data.get("DividendYield")),
-        "52_week_high": safe_float(data.get("52WeekHigh")),
-        "52_week_low": safe_float(data.get("52WeekLow")),
-        "50_day_ma": safe_float(data.get("50DayMovingAverage")),
-        "200_day_ma": safe_float(data.get("200DayMovingAverage")),
-    }
-    
-    return fundamentals
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        if not info or info.get("regularMarketPrice") is None:
+            return {"error": "Company data not found"}
+        
+        return {
+            "symbol": symbol,
+            "name": info.get("shortName") or info.get("longName") or symbol,
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "pe_ratio": safe_float(info.get("trailingPE")),
+            "eps": safe_float(info.get("trailingEps")),
+            "roe": safe_float(info.get("returnOnEquity")),
+            "market_cap": safe_float(info.get("marketCap")),
+            "dividend_yield": safe_float(info.get("dividendYield")),
+            "52_week_high": safe_float(info.get("fiftyTwoWeekHigh")),
+            "52_week_low": safe_float(info.get("fiftyTwoWeekLow")),
+            "50_day_ma": safe_float(info.get("fiftyDayAverage")),
+            "200_day_ma": safe_float(info.get("twoHundredDayAverage")),
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch company data: {str(e)}"}
 
 
 def get_quote(symbol: str) -> Dict[str, Any]:
     """
-    Fetch current quote for a stock.
+    Fetch current quote for a stock using yfinance.
     
     Args:
         symbol: Stock ticker symbol
@@ -109,25 +111,29 @@ def get_quote(symbol: str) -> Dict[str, Any]:
     Returns:
         Current price and change information
     """
-    params = {
-        "function": "GLOBAL_QUOTE",
-        "symbol": symbol,
-        "apikey": API_KEY
-    }
+    if not YFINANCE_AVAILABLE:
+        return {"error": "yfinance not installed"}
     
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
-    
-    if "Global Quote" not in data or not data["Global Quote"]:
-        return {"error": "Quote not found"}
-    
-    quote = data["Global Quote"]
-    
-    return {
-        "symbol": quote.get("01. symbol"),
-        "price": float(quote.get("05. price", 0)),
-        "change": float(quote.get("09. change", 0)),
-        "change_percent": quote.get("10. change percent", "0%").replace("%", ""),
-        "volume": int(quote.get("06. volume", 0)),
-        "latest_trading_day": quote.get("07. latest trading day")
-    }
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
+        prev_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+        
+        if price is None:
+            return {"error": "Quote not found"}
+        
+        change = price - prev_close if prev_close else 0
+        change_pct = (change / prev_close * 100) if prev_close else 0
+        
+        return {
+            "symbol": symbol,
+            "price": float(price),
+            "change": round(float(change), 2),
+            "change_percent": f"{change_pct:.2f}",
+            "volume": int(info.get("regularMarketVolume") or info.get("volume") or 0),
+            "latest_trading_day": None
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch quote: {str(e)}"}

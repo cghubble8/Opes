@@ -1,88 +1,114 @@
 """
 Stock Analysis API Endpoint - All-in-one for Vercel Serverless
+Uses yfinance for free, unlimited stock data access
 """
 from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import urlparse, parse_qs
-import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-# ============ CONFIGURATION ============
-API_KEY = "5IOBAC4K17O4IB39"
-BASE_URL = "https://www.alphavantage.co/query"
+# Use yfinance for stock data
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
 
-# ============ STOCK DATA FUNCTIONS ============
+# ============ STOCK DATA FUNCTIONS (yfinance) ============
 def safe_float(value):
     try:
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return None
         return float(value) if value and value != "None" else None
     except (ValueError, TypeError):
         return None
 
-def get_daily_prices(symbol, outputsize="compact"):
-    params = {
-        "function": "TIME_SERIES_DAILY",
-        "symbol": symbol,
-        "outputsize": outputsize,
-        "apikey": API_KEY
-    }
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
+def get_daily_prices(symbol, period="3mo"):
+    """Fetch daily OHLCV data using yfinance."""
+    if not YFINANCE_AVAILABLE:
+        return {"error": "yfinance not installed"}
     
-    if "Time Series (Daily)" not in data:
-        error_msg = data.get("Note", data.get("Error Message", "Unknown error"))
-        return {"error": error_msg}
-    
-    time_series = data["Time Series (Daily)"]
-    prices = []
-    for date, values in sorted(time_series.items(), reverse=True):
-        prices.append({
-            "date": date,
-            "open": float(values["1. open"]),
-            "high": float(values["2. high"]),
-            "low": float(values["3. low"]),
-            "close": float(values["4. close"]),
-            "volume": int(values["5. volume"])
-        })
-    return {"symbol": symbol, "prices": prices}
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return {"error": f"No data found for {symbol}"}
+        
+        prices = []
+        for date, row in hist.iterrows():
+            prices.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
+                "volume": int(row["Volume"])
+            })
+        
+        # Return newest first
+        prices.reverse()
+        return {"symbol": symbol, "prices": prices}
+    except Exception as e:
+        return {"error": f"Failed to fetch data: {str(e)}"}
 
 def get_company_overview(symbol):
-    params = {"function": "OVERVIEW", "symbol": symbol, "apikey": API_KEY}
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
+    """Fetch company fundamentals using yfinance."""
+    if not YFINANCE_AVAILABLE:
+        return {"error": "yfinance not installed"}
     
-    if not data or "Symbol" not in data:
-        return {"error": "Company data not found"}
-    
-    return {
-        "symbol": data.get("Symbol"),
-        "name": data.get("Name"),
-        "sector": data.get("Sector"),
-        "pe_ratio": safe_float(data.get("PERatio")),
-        "eps": safe_float(data.get("EPS")),
-        "roe": safe_float(data.get("ReturnOnEquityTTM")),
-        "market_cap": safe_float(data.get("MarketCapitalization")),
-        "dividend_yield": safe_float(data.get("DividendYield")),
-        "52_week_high": safe_float(data.get("52WeekHigh")),
-        "52_week_low": safe_float(data.get("52WeekLow")),
-    }
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        if not info or info.get("regularMarketPrice") is None:
+            return {"error": "Company data not found"}
+        
+        return {
+            "symbol": symbol,
+            "name": info.get("shortName") or info.get("longName") or symbol,
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "pe_ratio": safe_float(info.get("trailingPE")),
+            "eps": safe_float(info.get("trailingEps")),
+            "roe": safe_float(info.get("returnOnEquity")),
+            "market_cap": safe_float(info.get("marketCap")),
+            "dividend_yield": safe_float(info.get("dividendYield")),
+            "52_week_high": safe_float(info.get("fiftyTwoWeekHigh")),
+            "52_week_low": safe_float(info.get("fiftyTwoWeekLow")),
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch company data: {str(e)}"}
 
 def get_quote(symbol):
-    params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": API_KEY}
-    response = requests.get(BASE_URL, params=params)
-    data = response.json()
+    """Fetch current quote using yfinance."""
+    if not YFINANCE_AVAILABLE:
+        return {"error": "yfinance not installed"}
     
-    if "Global Quote" not in data or not data["Global Quote"]:
-        return {"error": "Quote not found"}
-    
-    quote = data["Global Quote"]
-    return {
-        "symbol": quote.get("01. symbol"),
-        "price": float(quote.get("05. price", 0)),
-        "change": float(quote.get("09. change", 0)),
-        "change_percent": quote.get("10. change percent", "0%").replace("%", ""),
-        "volume": int(quote.get("06. volume", 0)),
-    }
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
+        prev_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+        
+        if price is None:
+            return {"error": "Quote not found"}
+        
+        change = price - prev_close if prev_close else 0
+        change_pct = (change / prev_close * 100) if prev_close else 0
+        
+        return {
+            "symbol": symbol,
+            "price": float(price),
+            "change": round(float(change), 2),
+            "change_percent": f"{change_pct:.2f}",
+            "volume": int(info.get("regularMarketVolume") or info.get("volume") or 0),
+            "latest_trading_day": None
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch quote: {str(e)}"}
 
 # ============ TECHNICAL INDICATORS ============
 def calculate_sma(prices, period):
