@@ -29,7 +29,7 @@ function TopStocks({ onStockSelect }) {
         return (
             <div className="top-stocks-container">
                 <div className="top-stocks-header">
-                    <h2>🏆 Top 5 Buy-Rated Stocks</h2>
+                    <h2>Top 5 Buy-Rated Stocks</h2>
                     <p>AI-powered analysis of market leaders</p>
                 </div>
                 <div className="top-stocks-grid">
@@ -63,7 +63,7 @@ function TopStocks({ onStockSelect }) {
     return (
         <div className="top-stocks-container">
             <div className="top-stocks-header">
-                <h2>🏆 Top 5 Buy-Rated Stocks</h2>
+                <h2>Top 5 Buy-Rated Stocks</h2>
                 <p>AI-powered analysis of market leaders</p>
             </div>
 
@@ -121,8 +121,7 @@ function TopStocks({ onStockSelect }) {
             </div>
 
             <div className="demo-notice">
-                <span className="demo-icon">ℹ️</span>
-                <span>Demo data shown. Connect to Alpha Vantage API for real-time analysis.</span>
+                <span>Demo data displayed</span>
             </div>
         </div>
     )

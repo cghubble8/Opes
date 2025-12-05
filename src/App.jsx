@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ComposedChart } from 'recharts'
 import { analyzeStock, mockData } from './services/api'
 import TopStocks from './components/TopStocks'
+import Portfolio from './components/Portfolio'
+import Login from './components/Login'
 import './App.css'
 
 function App() {
@@ -9,7 +11,18 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
-  const [currentView, setCurrentView] = useState('analyze') // 'analyze' or 'topstocks'
+  const [currentView, setCurrentView] = useState('analyze') // 'analyze', 'topstocks', or 'portfolio'
+  const [user, setUser] = useState(null) // authentication state
+
+  const handleLogin = (userData) => {
+    setUser(userData)
+  }
+
+  const handleLogout = () => {
+    setUser(null)
+    setData(null)
+    setSymbol('')
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -61,15 +74,25 @@ function App() {
     })).reverse()
   }
 
+  // Show login page if not authenticated
+  if (!user) {
+    return <Login onLogin={handleLogin} />
+  }
+
   return (
     <div className="app-container">
       {/* Header */}
       <header className="header">
-        <h1>
-          <span className="header-icon">📊</span>
-          <span className="gradient-text">FinAssist</span>
-        </h1>
-        <p>AI-Powered Stock Analysis with Technical Indicators & ML Predictions</p>
+        <div className="header-top">
+          <h1>
+            <span className="header-icon">📊</span>
+            <span className="gradient-text">FinAssist</span>
+          </h1>
+          <button className="logout-btn" onClick={handleLogout}>
+            Sign Out
+          </button>
+        </div>
+        <p>Welcome back, {user.name}</p>
 
         {/* Navigation Tabs */}
         <nav className="nav-tabs">
@@ -85,12 +108,23 @@ function App() {
           >
             🏆 Top 5 Buys
           </button>
+          <button
+            className={`nav-tab ${currentView === 'portfolio' ? 'active' : ''}`}
+            onClick={() => setCurrentView('portfolio')}
+          >
+            💼 Portfolio
+          </button>
         </nav>
       </header>
 
       {/* Top Stocks View */}
       {currentView === 'topstocks' && (
         <TopStocks onStockSelect={handleQuickSearch} />
+      )}
+
+      {/* Portfolio View */}
+      {currentView === 'portfolio' && (
+        <Portfolio onStockSelect={handleQuickSearch} />
       )}
 
       {/* Analyze View */}
