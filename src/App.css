@@ -36,6 +36,42 @@
   font-size: 0.875rem;
 }
 
+/* Navigation Tabs */
+.nav-tabs {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+
+.nav-tab {
+  padding: 12px 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.nav-tab:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+}
+
+.nav-tab.active {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
 /* Search - floating card style */
 .search-section {
   max-width: 560px;
@@ -608,5 +644,378 @@
 
   .price-change {
     justify-content: center;
+  }
+}
+
+/* ==================== TOP STOCKS STYLES ==================== */
+
+.top-stocks-container {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.top-stocks-header {
+  text-align: center;
+  margin-bottom: var(--spacing-xl);
+}
+
+.top-stocks-header h2 {
+  font-size: 1.75rem;
+  margin-bottom: var(--spacing-xs);
+  background: linear-gradient(135deg, #ffd700, #ffaa00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.top-stocks-header p {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.top-stocks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+/* Stock Rank Card */
+.stock-rank-card {
+  background: linear-gradient(145deg, rgba(26, 35, 64, 0.9), rgba(15, 22, 41, 0.7));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-lg);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.stock-rank-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #ffd700, #ffaa00);
+  transform: scaleX(0);
+  transition: transform var(--transition-normal);
+}
+
+.stock-rank-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-blue);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.stock-rank-card:hover::before {
+  transform: scaleX(1);
+}
+
+/* Rank-specific gradients */
+.stock-rank-card.rank-1 {
+  border-color: rgba(255, 215, 0, 0.3);
+  background: linear-gradient(145deg, rgba(255, 215, 0, 0.1), rgba(15, 22, 41, 0.9));
+}
+
+.stock-rank-card.rank-2 {
+  border-color: rgba(192, 192, 192, 0.3);
+  background: linear-gradient(145deg, rgba(192, 192, 192, 0.08), rgba(15, 22, 41, 0.9));
+}
+
+.stock-rank-card.rank-3 {
+  border-color: rgba(205, 127, 50, 0.3);
+  background: linear-gradient(145deg, rgba(205, 127, 50, 0.08), rgba(15, 22, 41, 0.9));
+}
+
+/* Rank Badge */
+.rank-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+}
+
+.rank-emoji {
+  font-size: 1.75rem;
+}
+
+.rank-number {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Stock Rank Info */
+.stock-rank-info {
+  margin-bottom: var(--spacing-md);
+}
+
+.stock-rank-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.stock-rank-symbol {
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stock-rank-sector {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg-elevated);
+  padding: 4px 10px;
+  border-radius: 9999px;
+}
+
+.stock-rank-name {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.stock-rank-price {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.stock-rank-price .price-value {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stock-rank-price .price-change {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.stock-rank-price .price-change.positive {
+  color: var(--success-light);
+}
+
+.stock-rank-price .price-change.negative {
+  color: var(--danger-light);
+}
+
+/* Stock Rank Prediction */
+.stock-rank-prediction {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.prediction-badge {
+  display: inline-flex;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--spacing-sm);
+}
+
+.prediction-badge.bullish {
+  background: var(--success-bg);
+  color: var(--success-light);
+}
+
+.prediction-badge.bearish {
+  background: var(--danger-bg);
+  color: var(--danger-light);
+}
+
+/* Confidence Section */
+.confidence-section {
+  margin-bottom: var(--spacing-sm);
+}
+
+.confidence-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.confidence-value {
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.confidence-bar-container {
+  height: 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.confidence-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.confidence-bar-fill.high {
+  background: linear-gradient(90deg, var(--success), var(--success-light));
+}
+
+.confidence-bar-fill.medium {
+  background: linear-gradient(90deg, var(--warning), var(--warning-light));
+}
+
+.confidence-bar-fill.low {
+  background: linear-gradient(90deg, var(--danger), var(--danger-light));
+}
+
+.stock-reasoning {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* View Details Link */
+.view-details {
+  text-align: center;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  margin-top: var(--spacing-md);
+}
+
+.view-details span {
+  font-size: 0.8125rem;
+  color: var(--accent-cyan);
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+
+.stock-rank-card:hover .view-details span {
+  color: var(--accent-blue);
+}
+
+/* Demo Notice */
+.demo-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-lg);
+  color: var(--warning-light);
+  font-size: 0.8125rem;
+}
+
+.demo-icon {
+  font-size: 1rem;
+}
+
+/* Skeleton Loading */
+.stock-rank-card.skeleton {
+  pointer-events: none;
+}
+
+.skeleton-rank {
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-secondary) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.skeleton-line {
+  height: 16px;
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-secondary) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+.skeleton-line.wide {
+  width: 100%;
+}
+
+.skeleton-line.medium {
+  width: 70%;
+}
+
+.skeleton-line.narrow {
+  width: 40%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .top-stocks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Bottom Navigation for Mobile */
+  .nav-tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    flex-direction: row;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    padding-bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom, 0px));
+    background: rgba(10, 10, 15, 0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--border-color);
+    margin: 0;
+    z-index: 1000;
+  }
+
+  .nav-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+  }
+
+  /* Add padding to main content to account for bottom nav */
+  .app-container {
+    padding-bottom: 100px;
+  }
+
+  /* Hide header nav description on mobile */
+  .header {
+    margin-bottom: var(--spacing-lg);
   }
 }
