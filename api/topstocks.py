@@ -1,73 +1,115 @@
 """
 Top Stocks API Endpoint - Fetches and ranks top buy-rated stocks
-Uses yfinance for real-time data without rate limits
+Uses Yahoo Finance direct HTTP API (no heavy dependencies)
 """
 from http.server import BaseHTTPRequestHandler
 import json
+import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime
 
-# Use yfinance for stock data
-try:
-    import yfinance as yf
-    YFINANCE_AVAILABLE = True
-except ImportError:
-    YFINANCE_AVAILABLE = False
+# Yahoo Finance API endpoints
+YF_QUOTE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+YF_QUOTE_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
 
 # Watchlist of popular stocks to analyze
 WATCHLIST = ["NVDA", "META", "AMZN", "AAPL", "GOOGL", "MSFT", "TSLA", "AMD", "NFLX", "CRM"]
 
 def safe_float(value):
     try:
-        if value is None or (isinstance(value, float) and np.isnan(value)):
+        if value is None:
             return None
         return float(value) if value and value != "None" else None
     except (ValueError, TypeError):
         return None
 
 def get_stock_data(symbol):
-    """Fetch all required data for a stock."""
-    if not YFINANCE_AVAILABLE:
-        return None
-    
+    """Fetch all required data for a stock using direct Yahoo Finance API."""
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        hist = ticker.history(period="3mo")
+        # Get price history
+        url = YF_QUOTE_URL.format(symbol=symbol)
+        params = {"range": "3mo", "interval": "1d"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        data = response.json()
         
-        if hist.empty or info.get("regularMarketPrice") is None:
+        if "chart" not in data or not data["chart"]["result"]:
             return None
         
-        # Get price data
+        result = data["chart"]["result"][0]
+        meta = result.get("meta", {})
+        timestamps = result.get("timestamp", [])
+        quote = result.get("indicators", {}).get("quote", [{}])[0]
+        
+        if not timestamps:
+            return None
+        
+        # Build price list
         prices = []
-        for date, row in hist.iterrows():
-            prices.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "open": float(row["Open"]),
-                "high": float(row["High"]),
-                "low": float(row["Low"]),
-                "close": float(row["Close"]),
-                "volume": int(row["Volume"])
-            })
+        opens = quote.get("open", [])
+        highs = quote.get("high", [])
+        lows = quote.get("low", [])
+        closes = quote.get("close", [])
+        volumes = quote.get("volume", [])
+        
+        for i, ts in enumerate(timestamps):
+            if closes[i] is not None:
+                date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                prices.append({
+                    "date": date_str,
+                    "open": float(opens[i]) if opens[i] else 0,
+                    "high": float(highs[i]) if highs[i] else 0,
+                    "low": float(lows[i]) if lows[i] else 0,
+                    "close": float(closes[i]),
+                    "volume": int(volumes[i]) if volumes[i] else 0
+                })
+        
         prices.reverse()  # Newest first
         
-        # Get quote data
-        price = info.get("regularMarketPrice") or info.get("currentPrice")
-        prev_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+        # Get current price info
+        price = meta.get("regularMarketPrice")
+        prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
         change = price - prev_close if prev_close else 0
         change_pct = (change / prev_close * 100) if prev_close else 0
         
+        # Get company name and sector
+        name = meta.get("shortName") or meta.get("longName") or symbol
+        
+        # Try to get sector from quoteSummary
+        sector = "Technology"  # Default
+        try:
+            summary_url = YF_QUOTE_SUMMARY.format(symbol=symbol)
+            summary_params = {"modules": "summaryProfile,financialData"}
+            summary_response = requests.get(summary_url, params=summary_params, headers=HEADERS, timeout=5)
+            summary_data = summary_response.json()
+            if "quoteSummary" in summary_data and summary_data["quoteSummary"]["result"]:
+                profile = summary_data["quoteSummary"]["result"][0].get("summaryProfile", {})
+                financial = summary_data["quoteSummary"]["result"][0].get("financialData", {})
+                sector = profile.get("sector") or sector
+                pe_ratio = safe_float(financial.get("trailingPE", {}).get("raw"))
+                roe = safe_float(financial.get("returnOnEquity", {}).get("raw"))
+            else:
+                pe_ratio = None
+                roe = None
+        except:
+            pe_ratio = None
+            roe = None
+        
         return {
             "symbol": symbol,
-            "name": info.get("shortName") or info.get("longName") or symbol,
-            "sector": info.get("sector") or "Unknown",
+            "name": name,
+            "sector": sector,
             "price": float(price),
             "change": round(float(change), 2),
             "change_percent": f"{change_pct:.2f}",
             "prices": prices,
             "fundamentals": {
-                "pe_ratio": safe_float(info.get("trailingPE")),
-                "roe": safe_float(info.get("returnOnEquity")),
+                "pe_ratio": pe_ratio,
+                "roe": roe,
             }
         }
     except Exception as e:
@@ -165,10 +207,6 @@ def predict_stock(stock_data):
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if not YFINANCE_AVAILABLE:
-            self._respond(500, {"error": "yfinance not available"})
-            return
-        
         try:
             results = []
             

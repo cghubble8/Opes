@@ -1,51 +1,68 @@
 """
 Stock Analysis API Endpoint - All-in-one for Vercel Serverless
-Uses yfinance for free, unlimited stock data access
+Uses Yahoo Finance direct HTTP API (no heavy dependencies)
 """
 from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import urlparse, parse_qs
+import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-# Use yfinance for stock data
-try:
-    import yfinance as yf
-    YFINANCE_AVAILABLE = True
-except ImportError:
-    YFINANCE_AVAILABLE = False
+# Yahoo Finance API endpoints
+YF_QUOTE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+YF_QUOTE_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
 
-# ============ STOCK DATA FUNCTIONS (yfinance) ============
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
+
+# ============ STOCK DATA FUNCTIONS (Direct Yahoo Finance API) ============
 def safe_float(value):
     try:
-        if value is None or (isinstance(value, float) and np.isnan(value)):
+        if value is None:
             return None
         return float(value) if value and value != "None" else None
     except (ValueError, TypeError):
         return None
 
-def get_daily_prices(symbol, period="3mo"):
-    """Fetch daily OHLCV data using yfinance."""
-    if not YFINANCE_AVAILABLE:
-        return {"error": "yfinance not installed"}
-    
+def get_daily_prices(symbol, range_period="3mo"):
+    """Fetch daily OHLCV data using Yahoo Finance chart API."""
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=period)
+        url = YF_QUOTE_URL.format(symbol=symbol)
+        params = {"range": range_period, "interval": "1d"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        data = response.json()
         
-        if hist.empty:
+        if "chart" not in data or not data["chart"]["result"]:
             return {"error": f"No data found for {symbol}"}
         
+        result = data["chart"]["result"][0]
+        timestamps = result.get("timestamp", [])
+        quote = result.get("indicators", {}).get("quote", [{}])[0]
+        
+        if not timestamps:
+            return {"error": f"No price data for {symbol}"}
+        
         prices = []
-        for date, row in hist.iterrows():
-            prices.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "open": float(row["Open"]),
-                "high": float(row["High"]),
-                "low": float(row["Low"]),
-                "close": float(row["Close"]),
-                "volume": int(row["Volume"])
-            })
+        opens = quote.get("open", [])
+        highs = quote.get("high", [])
+        lows = quote.get("low", [])
+        closes = quote.get("close", [])
+        volumes = quote.get("volume", [])
+        
+        for i, ts in enumerate(timestamps):
+            if closes[i] is not None:
+                from datetime import datetime
+                date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                prices.append({
+                    "date": date_str,
+                    "open": float(opens[i]) if opens[i] else 0,
+                    "high": float(highs[i]) if highs[i] else 0,
+                    "low": float(lows[i]) if lows[i] else 0,
+                    "close": float(closes[i]),
+                    "volume": int(volumes[i]) if volumes[i] else 0
+                })
         
         # Return newest first
         prices.reverse()
@@ -54,44 +71,54 @@ def get_daily_prices(symbol, period="3mo"):
         return {"error": f"Failed to fetch data: {str(e)}"}
 
 def get_company_overview(symbol):
-    """Fetch company fundamentals using yfinance."""
-    if not YFINANCE_AVAILABLE:
-        return {"error": "yfinance not installed"}
-    
+    """Fetch company fundamentals using Yahoo Finance quoteSummary API."""
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        url = YF_QUOTE_SUMMARY.format(symbol=symbol)
+        params = {"modules": "summaryProfile,defaultKeyStatistics,financialData,price"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        data = response.json()
         
-        if not info or info.get("regularMarketPrice") is None:
+        if "quoteSummary" not in data or not data["quoteSummary"]["result"]:
             return {"error": "Company data not found"}
+        
+        result = data["quoteSummary"]["result"][0]
+        profile = result.get("summaryProfile", {})
+        stats = result.get("defaultKeyStatistics", {})
+        financial = result.get("financialData", {})
+        price_data = result.get("price", {})
         
         return {
             "symbol": symbol,
-            "name": info.get("shortName") or info.get("longName") or symbol,
-            "sector": info.get("sector"),
-            "industry": info.get("industry"),
-            "pe_ratio": safe_float(info.get("trailingPE")),
-            "eps": safe_float(info.get("trailingEps")),
-            "roe": safe_float(info.get("returnOnEquity")),
-            "market_cap": safe_float(info.get("marketCap")),
-            "dividend_yield": safe_float(info.get("dividendYield")),
-            "52_week_high": safe_float(info.get("fiftyTwoWeekHigh")),
-            "52_week_low": safe_float(info.get("fiftyTwoWeekLow")),
+            "name": price_data.get("shortName") or price_data.get("longName") or symbol,
+            "sector": profile.get("sector"),
+            "industry": profile.get("industry"),
+            "pe_ratio": safe_float(stats.get("trailingPE", {}).get("raw")),
+            "eps": safe_float(financial.get("trailingEps", {}).get("raw")),
+            "roe": safe_float(financial.get("returnOnEquity", {}).get("raw")),
+            "market_cap": safe_float(price_data.get("marketCap", {}).get("raw")),
+            "dividend_yield": safe_float(stats.get("yield", {}).get("raw")),
+            "52_week_high": safe_float(stats.get("fiftyTwoWeekHigh", {}).get("raw")),
+            "52_week_low": safe_float(stats.get("fiftyTwoWeekLow", {}).get("raw")),
         }
     except Exception as e:
         return {"error": f"Failed to fetch company data: {str(e)}"}
 
 def get_quote(symbol):
-    """Fetch current quote using yfinance."""
-    if not YFINANCE_AVAILABLE:
-        return {"error": "yfinance not installed"}
-    
+    """Fetch current quote using Yahoo Finance chart API."""
     try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        url = YF_QUOTE_URL.format(symbol=symbol)
+        params = {"range": "1d", "interval": "1m"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        data = response.json()
         
-        price = info.get("regularMarketPrice") or info.get("currentPrice")
-        prev_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+        if "chart" not in data or not data["chart"]["result"]:
+            return {"error": "Quote not found"}
+        
+        result = data["chart"]["result"][0]
+        meta = result.get("meta", {})
+        
+        price = meta.get("regularMarketPrice")
+        prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
         
         if price is None:
             return {"error": "Quote not found"}
@@ -104,7 +131,7 @@ def get_quote(symbol):
             "price": float(price),
             "change": round(float(change), 2),
             "change_percent": f"{change_pct:.2f}",
-            "volume": int(info.get("regularMarketVolume") or info.get("volume") or 0),
+            "volume": int(meta.get("regularMarketVolume", 0)),
             "latest_trading_day": None
         }
     except Exception as e:
