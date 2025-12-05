@@ -29,6 +29,14 @@ WATCHLIST = [
     {"symbol": "AMD", "sector": "Technology"},
     {"symbol": "NFLX", "sector": "Communication Services"},
     {"symbol": "CRM", "sector": "Technology"},
+    {"symbol": "AVGO", "sector": "Technology"},
+    {"symbol": "JPM", "sector": "Financial"},
+    {"symbol": "WMT", "sector": "Consumer Defensive"},
+    {"symbol": "UNH", "sector": "Healthcare"},
+    {"symbol": "V", "sector": "Financial"},
+    {"symbol": "XOM", "sector": "Energy"},
+    {"symbol": "MA", "sector": "Financial"},
+    {"symbol": "COST", "sector": "Consumer Cyclical"},
 ]
 
 def safe_get(data, *keys, default=None):
