@@ -1,6 +1,7 @@
 """
 Top Stocks API Endpoint - Fetches and ranks top buy-rated stocks
 Uses Yahoo Finance chart API for real-time prices (no auth required)
+Comment for redeploy
 """
 from http.server import BaseHTTPRequestHandler
 import json

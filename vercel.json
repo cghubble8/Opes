@@ -19,6 +19,10 @@
             "dest": "/api/analyze.py"
         },
         {
+            "src": "/api/topstocks",
+            "dest": "/api/topstocks.py"
+        },
+        {
             "handle": "filesystem"
         },
         {
