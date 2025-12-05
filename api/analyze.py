@@ -1,6 +1,6 @@
 """
 Stock Analysis API Endpoint - All-in-one for Vercel Serverless
-Uses Yahoo Finance direct HTTP API (no heavy dependencies)
+Uses Yahoo Finance chart API for prices + Alpha Vantage for fundamentals
 """
 from http.server import BaseHTTPRequestHandler
 import json
@@ -10,9 +10,10 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 
-# Yahoo Finance API endpoints
+# API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-YF_QUOTE_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
+ALPHA_VANTAGE_KEY = "5IOBAC4K17O4IB39"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -20,14 +21,14 @@ HEADERS = {
 
 # ============ HELPER FUNCTIONS ============
 def safe_float(value):
-    """Extract raw value from Yahoo Finance nested objects or plain values."""
+    """Convert value to float safely."""
     try:
         if value is None:
             return None
-        # Handle nested objects with 'raw' key
         if isinstance(value, dict):
             return float(value.get("raw")) if value.get("raw") is not None else None
-        return float(value) if value and str(value) != "None" else None
+        val = str(value).replace(",", "")
+        return float(val) if val and val != "None" and val != "-" else None
     except (ValueError, TypeError):
         return None
 
@@ -43,7 +44,7 @@ def safe_get(data, *keys, default=None):
 
 # ============ STOCK DATA FUNCTIONS ============
 def get_daily_prices(symbol, range_period="3mo"):
-    """Fetch daily OHLCV data using Yahoo Finance chart API."""
+    """Fetch daily OHLCV data using Yahoo Finance chart API (no auth required)."""
     try:
         url = YF_CHART_URL.format(symbol=symbol)
         params = {"range": range_period, "interval": "1d", "includePrePost": "false"}
@@ -59,6 +60,7 @@ def get_daily_prices(symbol, range_period="3mo"):
             return {"error": f"No data found for {symbol}"}
         
         result = result[0]
+        meta = result.get("meta", {})
         timestamps = result.get("timestamp", [])
         quote = safe_get(result, "indicators", "quote", default=[{}])[0]
         
@@ -84,52 +86,20 @@ def get_daily_prices(symbol, range_period="3mo"):
                     "volume": int(volumes[i]) if i < len(volumes) and volumes[i] else 0
                 })
         
-        # Return newest first
         prices.reverse()
-        return {"symbol": symbol, "prices": prices}
-    except Exception as e:
-        return {"error": f"Failed to fetch data: {str(e)}"}
-
-def get_company_overview(symbol):
-    """Fetch company fundamentals using Yahoo Finance quoteSummary API."""
-    try:
-        url = YF_QUOTE_SUMMARY.format(symbol=symbol)
-        params = {"modules": "summaryProfile,defaultKeyStatistics,financialData,price,summaryDetail"}
-        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
-        data = response.json()
         
-        result = safe_get(data, "quoteSummary", "result")
-        if not result or len(result) == 0:
-            return {"error": "Company data not found", "symbol": symbol, "name": symbol}
-        
-        result = result[0]
-        profile = result.get("summaryProfile", {})
-        stats = result.get("defaultKeyStatistics", {})
-        financial = result.get("financialData", {})
-        price_data = result.get("price", {})
-        summary = result.get("summaryDetail", {})
-        
-        # Extract name
-        name = safe_get(price_data, "shortName") or safe_get(price_data, "longName") or symbol
-        
+        # Extract additional data from meta
         return {
-            "symbol": symbol,
-            "name": name,
-            "sector": profile.get("sector"),
-            "industry": profile.get("industry"),
-            "pe_ratio": safe_float(summary.get("trailingPE")) or safe_float(financial.get("trailingPE")) or safe_float(stats.get("trailingPE")),
-            "forward_pe": safe_float(summary.get("forwardPE")) or safe_float(stats.get("forwardPE")),
-            "eps": safe_float(summary.get("trailingEps")) or safe_float(financial.get("trailingEps")),
-            "roe": safe_float(financial.get("returnOnEquity")),
-            "market_cap": safe_float(price_data.get("marketCap")),
-            "dividend_yield": safe_float(summary.get("dividendYield")) or safe_float(stats.get("yield")),
-            "52_week_high": safe_float(summary.get("fiftyTwoWeekHigh")),
-            "52_week_low": safe_float(summary.get("fiftyTwoWeekLow")),
-            "beta": safe_float(summary.get("beta")) or safe_float(stats.get("beta")),
-            "profit_margin": safe_float(financial.get("profitMargins")),
+            "symbol": symbol, 
+            "prices": prices,
+            "meta": {
+                "name": meta.get("shortName") or meta.get("longName") or symbol,
+                "exchange": meta.get("exchangeName"),
+                "currency": meta.get("currency")
+            }
         }
     except Exception as e:
-        return {"error": f"Failed to fetch company data: {str(e)}", "symbol": symbol, "name": symbol}
+        return {"error": f"Failed to fetch price data: {str(e)}"}
 
 def get_quote(symbol):
     """Fetch current quote using Yahoo Finance chart API."""
@@ -144,7 +114,6 @@ def get_quote(symbol):
             return {"error": "Quote not found"}
         
         meta = result[0].get("meta", {})
-        
         price = meta.get("regularMarketPrice")
         prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
         
@@ -164,6 +133,56 @@ def get_quote(symbol):
         }
     except Exception as e:
         return {"error": f"Failed to fetch quote: {str(e)}"}
+
+def get_company_overview(symbol):
+    """Fetch company fundamentals using Alpha Vantage (limited but works)."""
+    try:
+        params = {
+            "function": "OVERVIEW",
+            "symbol": symbol,
+            "apikey": ALPHA_VANTAGE_KEY
+        }
+        response = requests.get(ALPHA_VANTAGE_URL, params=params, timeout=15)
+        data = response.json()
+        
+        # Check for rate limit or error
+        if "Note" in data or "Information" in data:
+            # Rate limited - return partial data
+            return {
+                "symbol": symbol,
+                "name": symbol,
+                "sector": None,
+                "pe_ratio": None,
+                "eps": None,
+                "roe": None,
+                "market_cap": None,
+                "dividend_yield": None,
+                "52_week_high": None,
+                "52_week_low": None,
+                "rate_limited": True
+            }
+        
+        if not data or "Symbol" not in data:
+            return {"error": "Company data not found", "symbol": symbol, "name": symbol}
+        
+        return {
+            "symbol": symbol,
+            "name": data.get("Name", symbol),
+            "sector": data.get("Sector"),
+            "industry": data.get("Industry"),
+            "pe_ratio": safe_float(data.get("PERatio")),
+            "forward_pe": safe_float(data.get("ForwardPE")),
+            "eps": safe_float(data.get("EPS")),
+            "roe": safe_float(data.get("ReturnOnEquityTTM")),
+            "market_cap": safe_float(data.get("MarketCapitalization")),
+            "dividend_yield": safe_float(data.get("DividendYield")),
+            "52_week_high": safe_float(data.get("52WeekHigh")),
+            "52_week_low": safe_float(data.get("52WeekLow")),
+            "beta": safe_float(data.get("Beta")),
+            "profit_margin": safe_float(data.get("ProfitMargin")),
+        }
+    except Exception as e:
+        return {"error": f"Failed to fetch company data: {str(e)}", "symbol": symbol, "name": symbol}
 
 # ============ TECHNICAL INDICATORS ============
 def calculate_sma(prices, period):
@@ -282,7 +301,6 @@ def calculate_all_indicators(price_data):
     latest_sma_20 = get(sma_20)
     latest_sma_50 = get(sma_50)
     
-    # Signals
     rsi_signal = "Overbought" if latest_rsi and latest_rsi > 70 else "Oversold" if latest_rsi and latest_rsi < 30 else "Neutral"
     macd_signal = "Bullish" if latest_macd and latest_signal and latest_macd > latest_signal else "Bearish" if latest_macd and latest_signal else "N/A"
     
@@ -435,9 +453,12 @@ class handler(BaseHTTPRequestHandler):
             indicators = calculate_all_indicators(prices["prices"])
             prediction = train_and_predict(prices["prices"], fundamentals)
             
+            # Use name from price meta if fundamentals failed
+            name = fundamentals.get("name") or prices.get("meta", {}).get("name") or symbol
+            
             self._respond(200, {
                 "symbol": symbol,
-                "name": fundamentals.get("name", symbol),
+                "name": name,
                 "sector": fundamentals.get("sector"),
                 "quote": quote,
                 "indicators": indicators.get("indicators", {}),

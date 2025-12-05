@@ -1,6 +1,6 @@
 """
 Top Stocks API Endpoint - Fetches and ranks top buy-rated stocks
-Uses Yahoo Finance direct HTTP API (no heavy dependencies)
+Uses Yahoo Finance chart API for real-time prices (no auth required)
 """
 from http.server import BaseHTTPRequestHandler
 import json
@@ -9,27 +9,26 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 
-# Yahoo Finance API endpoints
+# Yahoo Finance chart API (no auth required)
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-YF_QUOTE_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-# Watchlist of popular stocks to analyze
-WATCHLIST = ["NVDA", "META", "AMZN", "AAPL", "GOOGL", "MSFT", "TSLA", "AMD", "NFLX", "CRM"]
-
-def safe_float(value):
-    """Extract raw value from Yahoo Finance nested objects."""
-    try:
-        if value is None:
-            return None
-        if isinstance(value, dict):
-            return float(value.get("raw")) if value.get("raw") is not None else None
-        return float(value) if value and str(value) != "None" else None
-    except (ValueError, TypeError):
-        return None
+# Watchlist with sector info (since Yahoo quoteSummary needs auth)
+WATCHLIST = [
+    {"symbol": "NVDA", "sector": "Technology"},
+    {"symbol": "META", "sector": "Technology"},
+    {"symbol": "AMZN", "sector": "Consumer Cyclical"},
+    {"symbol": "AAPL", "sector": "Technology"},
+    {"symbol": "GOOGL", "sector": "Technology"},
+    {"symbol": "MSFT", "sector": "Technology"},
+    {"symbol": "TSLA", "sector": "Consumer Cyclical"},
+    {"symbol": "AMD", "sector": "Technology"},
+    {"symbol": "NFLX", "sector": "Communication Services"},
+    {"symbol": "CRM", "sector": "Technology"},
+]
 
 def safe_get(data, *keys, default=None):
     """Safely get nested dictionary values."""
@@ -41,10 +40,9 @@ def safe_get(data, *keys, default=None):
             return default
     return result if result is not None else default
 
-def get_stock_data(symbol):
-    """Fetch all required data for a stock using direct Yahoo Finance API."""
+def get_stock_data(symbol, sector):
+    """Fetch stock data using Yahoo Finance chart API."""
     try:
-        # Get price history from chart API
         url = YF_CHART_URL.format(symbol=symbol)
         params = {"range": "3mo", "interval": "1d", "includePrePost": "false"}
         response = requests.get(url, params=params, headers=HEADERS, timeout=10)
@@ -94,43 +92,14 @@ def get_stock_data(symbol):
         change = price - prev_close if prev_close else 0
         change_pct = (change / prev_close * 100) if prev_close else 0
         
-        # Get company details from quoteSummary
-        name = meta.get("shortName") or meta.get("longName") or symbol
-        sector = "Technology"  # Default
-        pe_ratio = None
-        roe = None
-        
-        try:
-            summary_url = YF_QUOTE_SUMMARY.format(symbol=symbol)
-            summary_params = {"modules": "summaryProfile,financialData,summaryDetail"}
-            summary_response = requests.get(summary_url, params=summary_params, headers=HEADERS, timeout=8)
-            summary_data = summary_response.json()
-            
-            result = safe_get(summary_data, "quoteSummary", "result")
-            if result and len(result) > 0:
-                result = result[0]
-                profile = result.get("summaryProfile", {})
-                financial = result.get("financialData", {})
-                summary = result.get("summaryDetail", {})
-                
-                sector = profile.get("sector") or sector
-                pe_ratio = safe_float(summary.get("trailingPE")) or safe_float(financial.get("trailingPE"))
-                roe = safe_float(financial.get("returnOnEquity"))
-        except:
-            pass
-        
         return {
             "symbol": symbol,
-            "name": name,
+            "name": meta.get("shortName") or meta.get("longName") or symbol,
             "sector": sector,
             "price": round(float(price), 2),
             "change": round(float(change), 2),
             "change_percent": f"{change_pct:.2f}",
             "prices": prices,
-            "fundamentals": {
-                "pe_ratio": pe_ratio,
-                "roe": roe,
-            }
         }
     except Exception as e:
         print(f"Error fetching {symbol}: {e}")
@@ -186,7 +155,7 @@ def predict_stock(stock_data):
     X_pred = np.array(features[-1:])
     
     if np.sum(y_train) == 0 or np.sum(y_train) == len(y_train):
-        return {"prediction": "Neutral", "confidence": 50, "direction": "neutral", "reasoning": "Mixed signals"}
+        return {"prediction": "Neutral", "confidence": 50, "direction": "neutral", "reasoning": "Mixed market signals"}
     
     model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_split=5, random_state=42, class_weight='balanced')
     model.fit(X_train, y_train)
@@ -202,20 +171,19 @@ def predict_stock(stock_data):
         direction = "bearish"
         text = "Strong Sell Signal" if conf > 0.7 else "Moderate Sell Signal" if conf > 0.55 else "Weak Sell Signal"
     
-    # Generate reasoning
-    fundamentals = stock_data.get("fundamentals", {})
-    pe = fundamentals.get("pe_ratio")
-    roe = fundamentals.get("roe")
+    # Generate reasoning based on recent performance
+    recent_change = (stock_data["prices"][0]["close"] - stock_data["prices"][4]["close"]) / stock_data["prices"][4]["close"] * 100
     
     reasons = []
     if direction == "bullish":
         reasons.append("Positive momentum detected")
-    if pe and pe < 30:
-        reasons.append("reasonable valuation")
-    if roe and roe > 0.10:
-        reasons.append("strong returns")
+        if recent_change > 2:
+            reasons.append("strong recent gains")
+    else:
+        if recent_change < -2:
+            reasons.append("Recent weakness observed")
     
-    reasoning = ", ".join(reasons) if reasons else "Based on technical analysis"
+    reasoning = ", ".join(reasons) if reasons else "Based on technical pattern analysis"
     reasoning = reasoning[0].upper() + reasoning[1:] + "."
     
     return {
@@ -230,8 +198,8 @@ class handler(BaseHTTPRequestHandler):
         try:
             results = []
             
-            for symbol in WATCHLIST:
-                stock_data = get_stock_data(symbol)
+            for stock_info in WATCHLIST:
+                stock_data = get_stock_data(stock_info["symbol"], stock_info["sector"])
                 if stock_data:
                     prediction = predict_stock(stock_data)
                     
@@ -253,6 +221,27 @@ class handler(BaseHTTPRequestHandler):
             # Sort by confidence and take top 5
             results.sort(key=lambda x: x["confidence"], reverse=True)
             top_5 = results[:5]
+            
+            # If we don't have 5 bullish stocks, add some bearish ones
+            if len(top_5) < 5:
+                for stock_info in WATCHLIST:
+                    if len(top_5) >= 5:
+                        break
+                    stock_data = get_stock_data(stock_info["symbol"], stock_info["sector"])
+                    if stock_data and not any(r["symbol"] == stock_data["symbol"] for r in top_5):
+                        prediction = predict_stock(stock_data)
+                        top_5.append({
+                            "symbol": stock_data["symbol"],
+                            "name": stock_data["name"],
+                            "sector": stock_data["sector"],
+                            "price": stock_data["price"],
+                            "change": stock_data["change"],
+                            "change_percent": stock_data["change_percent"],
+                            "prediction": prediction["prediction"],
+                            "confidence": prediction["confidence"],
+                            "direction": prediction["direction"],
+                            "reasoning": prediction["reasoning"]
+                        })
             
             self._respond(200, {"stocks": top_5})
         except Exception as e:
