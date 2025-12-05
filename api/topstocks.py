@@ -10,40 +10,54 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 
 # Yahoo Finance API endpoints
-YF_QUOTE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 YF_QUOTE_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 # Watchlist of popular stocks to analyze
 WATCHLIST = ["NVDA", "META", "AMZN", "AAPL", "GOOGL", "MSFT", "TSLA", "AMD", "NFLX", "CRM"]
 
 def safe_float(value):
+    """Extract raw value from Yahoo Finance nested objects."""
     try:
         if value is None:
             return None
-        return float(value) if value and value != "None" else None
+        if isinstance(value, dict):
+            return float(value.get("raw")) if value.get("raw") is not None else None
+        return float(value) if value and str(value) != "None" else None
     except (ValueError, TypeError):
         return None
+
+def safe_get(data, *keys, default=None):
+    """Safely get nested dictionary values."""
+    result = data
+    for key in keys:
+        if isinstance(result, dict):
+            result = result.get(key)
+        else:
+            return default
+    return result if result is not None else default
 
 def get_stock_data(symbol):
     """Fetch all required data for a stock using direct Yahoo Finance API."""
     try:
-        # Get price history
-        url = YF_QUOTE_URL.format(symbol=symbol)
-        params = {"range": "3mo", "interval": "1d"}
+        # Get price history from chart API
+        url = YF_CHART_URL.format(symbol=symbol)
+        params = {"range": "3mo", "interval": "1d", "includePrePost": "false"}
         response = requests.get(url, params=params, headers=HEADERS, timeout=10)
         data = response.json()
         
-        if "chart" not in data or not data["chart"]["result"]:
+        result = safe_get(data, "chart", "result")
+        if not result or len(result) == 0:
             return None
         
-        result = data["chart"]["result"][0]
+        result = result[0]
         meta = result.get("meta", {})
         timestamps = result.get("timestamp", [])
-        quote = result.get("indicators", {}).get("quote", [{}])[0]
+        quote = safe_get(result, "indicators", "quote", default=[{}])[0]
         
         if not timestamps:
             return None
@@ -57,53 +71,59 @@ def get_stock_data(symbol):
         volumes = quote.get("volume", [])
         
         for i, ts in enumerate(timestamps):
-            if closes[i] is not None:
-                date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            if i < len(closes) and closes[i] is not None:
+                date_str = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
                 prices.append({
                     "date": date_str,
-                    "open": float(opens[i]) if opens[i] else 0,
-                    "high": float(highs[i]) if highs[i] else 0,
-                    "low": float(lows[i]) if lows[i] else 0,
+                    "open": float(opens[i]) if i < len(opens) and opens[i] else 0,
+                    "high": float(highs[i]) if i < len(highs) and highs[i] else 0,
+                    "low": float(lows[i]) if i < len(lows) and lows[i] else 0,
                     "close": float(closes[i]),
-                    "volume": int(volumes[i]) if volumes[i] else 0
+                    "volume": int(volumes[i]) if i < len(volumes) and volumes[i] else 0
                 })
         
         prices.reverse()  # Newest first
         
-        # Get current price info
+        # Get current price info from meta
         price = meta.get("regularMarketPrice")
         prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
+        
+        if price is None:
+            return None
+            
         change = price - prev_close if prev_close else 0
         change_pct = (change / prev_close * 100) if prev_close else 0
         
-        # Get company name and sector
+        # Get company details from quoteSummary
         name = meta.get("shortName") or meta.get("longName") or symbol
-        
-        # Try to get sector from quoteSummary
         sector = "Technology"  # Default
+        pe_ratio = None
+        roe = None
+        
         try:
             summary_url = YF_QUOTE_SUMMARY.format(symbol=symbol)
-            summary_params = {"modules": "summaryProfile,financialData"}
-            summary_response = requests.get(summary_url, params=summary_params, headers=HEADERS, timeout=5)
+            summary_params = {"modules": "summaryProfile,financialData,summaryDetail"}
+            summary_response = requests.get(summary_url, params=summary_params, headers=HEADERS, timeout=8)
             summary_data = summary_response.json()
-            if "quoteSummary" in summary_data and summary_data["quoteSummary"]["result"]:
-                profile = summary_data["quoteSummary"]["result"][0].get("summaryProfile", {})
-                financial = summary_data["quoteSummary"]["result"][0].get("financialData", {})
+            
+            result = safe_get(summary_data, "quoteSummary", "result")
+            if result and len(result) > 0:
+                result = result[0]
+                profile = result.get("summaryProfile", {})
+                financial = result.get("financialData", {})
+                summary = result.get("summaryDetail", {})
+                
                 sector = profile.get("sector") or sector
-                pe_ratio = safe_float(financial.get("trailingPE", {}).get("raw"))
-                roe = safe_float(financial.get("returnOnEquity", {}).get("raw"))
-            else:
-                pe_ratio = None
-                roe = None
+                pe_ratio = safe_float(summary.get("trailingPE")) or safe_float(financial.get("trailingPE"))
+                roe = safe_float(financial.get("returnOnEquity"))
         except:
-            pe_ratio = None
-            roe = None
+            pass
         
         return {
             "symbol": symbol,
             "name": name,
             "sector": sector,
-            "price": float(price),
+            "price": round(float(price), 2),
             "change": round(float(change), 2),
             "change_percent": f"{change_pct:.2f}",
             "prices": prices,
@@ -190,9 +210,9 @@ def predict_stock(stock_data):
     reasons = []
     if direction == "bullish":
         reasons.append("Positive momentum detected")
-    if pe and pe < 25:
+    if pe and pe < 30:
         reasons.append("reasonable valuation")
-    if roe and roe > 0.15:
+    if roe and roe > 0.10:
         reasons.append("strong returns")
     
     reasoning = ", ".join(reasons) if reasons else "Based on technical analysis"

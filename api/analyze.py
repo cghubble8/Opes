@@ -8,38 +8,59 @@ from urllib.parse import urlparse, parse_qs
 import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from datetime import datetime
 
 # Yahoo Finance API endpoints
-YF_QUOTE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 YF_QUOTE_SUMMARY = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-# ============ STOCK DATA FUNCTIONS (Direct Yahoo Finance API) ============
+# ============ HELPER FUNCTIONS ============
 def safe_float(value):
+    """Extract raw value from Yahoo Finance nested objects or plain values."""
     try:
         if value is None:
             return None
-        return float(value) if value and value != "None" else None
+        # Handle nested objects with 'raw' key
+        if isinstance(value, dict):
+            return float(value.get("raw")) if value.get("raw") is not None else None
+        return float(value) if value and str(value) != "None" else None
     except (ValueError, TypeError):
         return None
 
+def safe_get(data, *keys, default=None):
+    """Safely get nested dictionary values."""
+    result = data
+    for key in keys:
+        if isinstance(result, dict):
+            result = result.get(key)
+        else:
+            return default
+    return result if result is not None else default
+
+# ============ STOCK DATA FUNCTIONS ============
 def get_daily_prices(symbol, range_period="3mo"):
     """Fetch daily OHLCV data using Yahoo Finance chart API."""
     try:
-        url = YF_QUOTE_URL.format(symbol=symbol)
-        params = {"range": range_period, "interval": "1d"}
-        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        url = YF_CHART_URL.format(symbol=symbol)
+        params = {"range": range_period, "interval": "1d", "includePrePost": "false"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         data = response.json()
         
-        if "chart" not in data or not data["chart"]["result"]:
+        error = safe_get(data, "chart", "error")
+        if error:
+            return {"error": error.get("description", "Unknown error")}
+        
+        result = safe_get(data, "chart", "result")
+        if not result or len(result) == 0:
             return {"error": f"No data found for {symbol}"}
         
-        result = data["chart"]["result"][0]
+        result = result[0]
         timestamps = result.get("timestamp", [])
-        quote = result.get("indicators", {}).get("quote", [{}])[0]
+        quote = safe_get(result, "indicators", "quote", default=[{}])[0]
         
         if not timestamps:
             return {"error": f"No price data for {symbol}"}
@@ -52,16 +73,15 @@ def get_daily_prices(symbol, range_period="3mo"):
         volumes = quote.get("volume", [])
         
         for i, ts in enumerate(timestamps):
-            if closes[i] is not None:
-                from datetime import datetime
-                date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            if i < len(closes) and closes[i] is not None:
+                date_str = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
                 prices.append({
                     "date": date_str,
-                    "open": float(opens[i]) if opens[i] else 0,
-                    "high": float(highs[i]) if highs[i] else 0,
-                    "low": float(lows[i]) if lows[i] else 0,
+                    "open": float(opens[i]) if i < len(opens) and opens[i] else 0,
+                    "high": float(highs[i]) if i < len(highs) and highs[i] else 0,
+                    "low": float(lows[i]) if i < len(lows) and lows[i] else 0,
                     "close": float(closes[i]),
-                    "volume": int(volumes[i]) if volumes[i] else 0
+                    "volume": int(volumes[i]) if i < len(volumes) and volumes[i] else 0
                 })
         
         # Return newest first
@@ -74,48 +94,56 @@ def get_company_overview(symbol):
     """Fetch company fundamentals using Yahoo Finance quoteSummary API."""
     try:
         url = YF_QUOTE_SUMMARY.format(symbol=symbol)
-        params = {"modules": "summaryProfile,defaultKeyStatistics,financialData,price"}
-        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        params = {"modules": "summaryProfile,defaultKeyStatistics,financialData,price,summaryDetail"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         data = response.json()
         
-        if "quoteSummary" not in data or not data["quoteSummary"]["result"]:
-            return {"error": "Company data not found"}
+        result = safe_get(data, "quoteSummary", "result")
+        if not result or len(result) == 0:
+            return {"error": "Company data not found", "symbol": symbol, "name": symbol}
         
-        result = data["quoteSummary"]["result"][0]
+        result = result[0]
         profile = result.get("summaryProfile", {})
         stats = result.get("defaultKeyStatistics", {})
         financial = result.get("financialData", {})
         price_data = result.get("price", {})
+        summary = result.get("summaryDetail", {})
+        
+        # Extract name
+        name = safe_get(price_data, "shortName") or safe_get(price_data, "longName") or symbol
         
         return {
             "symbol": symbol,
-            "name": price_data.get("shortName") or price_data.get("longName") or symbol,
+            "name": name,
             "sector": profile.get("sector"),
             "industry": profile.get("industry"),
-            "pe_ratio": safe_float(stats.get("trailingPE", {}).get("raw")),
-            "eps": safe_float(financial.get("trailingEps", {}).get("raw")),
-            "roe": safe_float(financial.get("returnOnEquity", {}).get("raw")),
-            "market_cap": safe_float(price_data.get("marketCap", {}).get("raw")),
-            "dividend_yield": safe_float(stats.get("yield", {}).get("raw")),
-            "52_week_high": safe_float(stats.get("fiftyTwoWeekHigh", {}).get("raw")),
-            "52_week_low": safe_float(stats.get("fiftyTwoWeekLow", {}).get("raw")),
+            "pe_ratio": safe_float(summary.get("trailingPE")) or safe_float(financial.get("trailingPE")) or safe_float(stats.get("trailingPE")),
+            "forward_pe": safe_float(summary.get("forwardPE")) or safe_float(stats.get("forwardPE")),
+            "eps": safe_float(summary.get("trailingEps")) or safe_float(financial.get("trailingEps")),
+            "roe": safe_float(financial.get("returnOnEquity")),
+            "market_cap": safe_float(price_data.get("marketCap")),
+            "dividend_yield": safe_float(summary.get("dividendYield")) or safe_float(stats.get("yield")),
+            "52_week_high": safe_float(summary.get("fiftyTwoWeekHigh")),
+            "52_week_low": safe_float(summary.get("fiftyTwoWeekLow")),
+            "beta": safe_float(summary.get("beta")) or safe_float(stats.get("beta")),
+            "profit_margin": safe_float(financial.get("profitMargins")),
         }
     except Exception as e:
-        return {"error": f"Failed to fetch company data: {str(e)}"}
+        return {"error": f"Failed to fetch company data: {str(e)}", "symbol": symbol, "name": symbol}
 
 def get_quote(symbol):
     """Fetch current quote using Yahoo Finance chart API."""
     try:
-        url = YF_QUOTE_URL.format(symbol=symbol)
-        params = {"range": "1d", "interval": "1m"}
-        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        url = YF_CHART_URL.format(symbol=symbol)
+        params = {"range": "1d", "interval": "1m", "includePrePost": "false"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         data = response.json()
         
-        if "chart" not in data or not data["chart"]["result"]:
+        result = safe_get(data, "chart", "result")
+        if not result or len(result) == 0:
             return {"error": "Quote not found"}
         
-        result = data["chart"]["result"][0]
-        meta = result.get("meta", {})
+        meta = result[0].get("meta", {})
         
         price = meta.get("regularMarketPrice")
         prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
@@ -128,11 +156,11 @@ def get_quote(symbol):
         
         return {
             "symbol": symbol,
-            "price": float(price),
+            "price": round(float(price), 2),
             "change": round(float(change), 2),
             "change_percent": f"{change_pct:.2f}",
             "volume": int(meta.get("regularMarketVolume", 0)),
-            "latest_trading_day": None
+            "latest_trading_day": datetime.utcfromtimestamp(meta.get("regularMarketTime", 0)).strftime("%Y-%m-%d") if meta.get("regularMarketTime") else None
         }
     except Exception as e:
         return {"error": f"Failed to fetch quote: {str(e)}"}
@@ -372,9 +400,9 @@ def train_and_predict(price_data, fundamentals=None):
     note = ""
     if fundamentals:
         pe, roe = fundamentals.get("pe_ratio"), fundamentals.get("roe")
-        if pe and roe and pe < 15 and roe > 0.15:
+        if pe and roe and pe < 20 and roe > 0.10:
             note = " Fundamentals appear strong."
-        elif pe and pe > 30:
+        elif pe and pe > 35:
             note = " High P/E may indicate overvaluation."
     
     return {
@@ -416,12 +444,15 @@ class handler(BaseHTTPRequestHandler):
                 "signals": indicators.get("signals", {}),
                 "fundamentals": {
                     "pe_ratio": fundamentals.get("pe_ratio"),
+                    "forward_pe": fundamentals.get("forward_pe"),
                     "eps": fundamentals.get("eps"),
                     "roe": fundamentals.get("roe"),
                     "market_cap": fundamentals.get("market_cap"),
                     "dividend_yield": fundamentals.get("dividend_yield"),
                     "52_week_high": fundamentals.get("52_week_high"),
                     "52_week_low": fundamentals.get("52_week_low"),
+                    "beta": fundamentals.get("beta"),
+                    "profit_margin": fundamentals.get("profit_margin"),
                 },
                 "prediction": prediction,
                 "chart_data": indicators.get("chart_data", {})
