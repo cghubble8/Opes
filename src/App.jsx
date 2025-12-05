@@ -283,11 +283,6 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* Disclaimer */}
-      <footer className="disclaimer">
-        ⚠️ Disclaimer: This is for educational purposes only. Not financial advice. Always do your own research before investing.
-      </footer>
     </div>
   )
 }
