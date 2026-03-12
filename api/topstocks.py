@@ -10,11 +10,15 @@ import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
-ALPHA_VANTAGE_KEY = os.environ.get("ALPHA_VANTAGE_KEY", "5IOBAC4K17O4IB39")
+ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -387,37 +391,64 @@ def predict_stock(stock_data, fundamentals=None):
 
 # ============ API HANDLER ============
 
+def _score_stock(stock_info):
+    """Fetch, score, and return a single stock entry. Designed for thread pool use."""
+    symbol = stock_info["symbol"]
+    sector = stock_info["sector"]
+    stock_data = get_stock_data(symbol, sector)
+    if not stock_data:
+        return None
+    return {"stock_data": stock_data, "symbol": symbol}
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
+            # ── Step 1: Fetch all price data in parallel (uncapped threads) ──
+            price_results = {}  # symbol -> stock_data
+            with ThreadPoolExecutor(max_workers=len(WATCHLIST)) as ex:
+                future_to_sym = {
+                    ex.submit(get_stock_data, info["symbol"], info["sector"]): info
+                    for info in WATCHLIST
+                }
+                for future in as_completed(future_to_sym):
+                    info = future_to_sym[future]
+                    try:
+                        data = future.result()
+                        if data:
+                            price_results[info["symbol"]] = data
+                    except Exception:
+                        pass
+
+            # ── Step 2: Fetch all fundamentals in parallel (capped at 5 to
+            #            respect Alpha Vantage's 5 req/min free-tier limit) ──
+            symbols_with_data = list(price_results.keys())
+            fund_results = {}  # symbol -> fundamentals dict
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                future_to_sym = {
+                    ex.submit(get_fundamentals, sym): sym
+                    for sym in symbols_with_data
+                }
+                for future in as_completed(future_to_sym):
+                    sym = future_to_sym[future]
+                    try:
+                        fund_results[sym] = future.result()
+                    except Exception:
+                        fund_results[sym] = {}
+
+            # ── Step 3: Score every stock (CPU-bound, no I/O) ──
             results = []
-
-            for stock_info in WATCHLIST:
-                symbol = stock_info["symbol"]
-                sector = stock_info["sector"]
-
-                # 1. Price data from Yahoo Finance
-                stock_data = get_stock_data(symbol, sector)
-                if not stock_data:
-                    continue
-
-                # 2. Fundamentals from Alpha Vantage
-                fund = get_fundamentals(symbol)
-
-                # 3. ML prediction
+            for sym, stock_data in price_results.items():
+                fund = fund_results.get(sym, {})
                 prediction = predict_stock(stock_data, fund)
 
-                # Only rank bullish signals
                 if prediction["direction"] != "bullish":
                     continue
 
-                # 4. Composite quality score
                 fund_score = compute_fundamentals_score(fund)
                 momentum_score = compute_momentum_score(stock_data)
                 quality_score = compute_quality_score(
-                    prediction["confidence"],
-                    fund_score,
-                    momentum_score,
+                    prediction["confidence"], fund_score, momentum_score
                 )
 
                 results.append({
@@ -442,21 +473,19 @@ class handler(BaseHTTPRequestHandler):
                     } if fund else None,
                 })
 
-            # Sort by composite quality score (descending), take top 5
+            # Sort by quality score, take top 5
             results.sort(key=lambda x: x["quality_score"], reverse=True)
             top_5 = results[:5]
 
-            # If fewer than 5 bullish stocks, pad with best bearish
+            # Pad with best non-bullish if fewer than 5
             if len(top_5) < 5:
-                for stock_info in WATCHLIST:
+                already = {r["symbol"] for r in top_5}
+                for sym, stock_data in price_results.items():
                     if len(top_5) >= 5:
                         break
-                    if any(r["symbol"] == stock_info["symbol"] for r in top_5):
+                    if sym in already:
                         continue
-                    stock_data = get_stock_data(stock_info["symbol"], stock_info["sector"])
-                    if not stock_data:
-                        continue
-                    fund = get_fundamentals(stock_info["symbol"])
+                    fund = fund_results.get(sym, {})
                     prediction = predict_stock(stock_data, fund)
                     fund_score = compute_fundamentals_score(fund)
                     momentum_score = compute_momentum_score(stock_data)

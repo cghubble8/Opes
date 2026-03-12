@@ -799,6 +799,35 @@
   font-size: 0.75rem;
 }
 
+/* 4-Pillar sub-score breakdown */
+.pillar-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.pillar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+.pillar-label {
+  color: var(--text-secondary);
+}
+
+.pillar-value {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
 /* Fundamentals */
 .fundamentals-card {
   padding: var(--spacing-lg);

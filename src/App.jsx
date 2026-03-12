@@ -286,30 +286,56 @@ function App() {
                   </div>
                 </div>
 
-                {/* ML Prediction */}
+                {/* AI Prediction — 4-Pillar Rating */}
                 <div className="card prediction-card">
                   <div className="prediction-icon">
                     {data.prediction?.direction === 'bullish' ? '🚀' : data.prediction?.direction === 'bearish' ? '📉' : '➡️'}
                   </div>
-                  <h3>AI Prediction</h3>
+                  <h3>4-Pillar Rating</h3>
+
+                  {/* Composite rating label */}
                   <div className={`prediction-title ${data.prediction?.direction}`}>
-                    {data.prediction?.prediction}
+                    {data.prediction?.rating || data.prediction?.prediction}
                   </div>
-                  <div className="confidence-meter">
-                    <div className="confidence-label">
-                      <span>Confidence</span>
-                      <span>{data.prediction?.confidence}%</span>
+
+                  {/* Quality Score bar */}
+                  {data.prediction?.quality_score != null && (
+                    <div className="confidence-meter">
+                      <div className="confidence-label">
+                        <span>Quality Score</span>
+                        <span>{data.prediction.quality_score.toFixed(1)} / 100</span>
+                      </div>
+                      <div className="confidence-bar">
+                        <div
+                          className={`confidence-fill ${data.prediction.quality_score > 70 ? 'high' : data.prediction.quality_score > 50 ? 'medium' : 'low'}`}
+                          style={{ width: `${data.prediction.quality_score}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="confidence-bar">
-                      <div
-                        className={`confidence-fill ${data.prediction?.confidence > 70 ? 'high' : data.prediction?.confidence > 50 ? 'medium' : 'low'}`}
-                        style={{ width: `${data.prediction?.confidence}%` }}
-                      ></div>
+                  )}
+
+                  {/* Sub-score breakdown */}
+                  <div className="pillar-breakdown">
+                    <div className="pillar-row">
+                      <span className="pillar-label">🤖 AI Confidence</span>
+                      <span className="pillar-value">{data.prediction?.confidence}%</span>
+                    </div>
+                    {data.prediction?.fund_score != null && (
+                      <div className="pillar-row">
+                        <span className="pillar-label">💼 Fundamentals</span>
+                        <span className="pillar-value">{data.prediction.fund_score.toFixed(1)}</span>
+                      </div>
+                    )}
+                    <div className="pillar-row">
+                      <span className="pillar-label">📈 Momentum</span>
+                      <span className="pillar-value">{data.prediction?.momentum_score?.toFixed(1)}</span>
                     </div>
                   </div>
+
                   <p className="prediction-reasoning">{data.prediction?.reasoning}</p>
                   <p className="model-accuracy">Model Training Accuracy: {data.prediction?.model_accuracy}%</p>
                 </div>
+
               </div>
 
               {/* Fundamentals */}

@@ -2,6 +2,8 @@
 Stock Analysis API Endpoint - All-in-one for Vercel Serverless
 Uses Yahoo Finance chart API for prices + Alpha Vantage for fundamentals
 """
+import os
+from dotenv import load_dotenv
 from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import urlparse, parse_qs
@@ -9,11 +11,14 @@ import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+load_dotenv()
 
 # API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
-ALPHA_VANTAGE_KEY = "5IOBAC4K17O4IB39"
+ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -431,6 +436,97 @@ def train_and_predict(price_data, fundamentals=None):
         "model_accuracy": round(model.score(X_train, y_train) * 100, 1)
     }
 
+
+# ============ QUALITY SCORING (same 4-pillar system as topstocks.py) ============
+
+def compute_fundamentals_score(fund):
+    """Score company quality from fundamentals, 0-100. Higher is better."""
+    if not fund or fund.get("rate_limited") or "error" in fund:
+        return None  # Unavailable — weight will be redistributed
+
+    score = 50.0
+
+    pe = fund.get("pe_ratio")
+    if pe is not None:
+        if pe <= 0:    score -= 10
+        elif pe < 15:  score += 20
+        elif pe < 25:  score += 10
+        elif pe < 35:  score += 0
+        else:          score -= 15
+
+    roe = fund.get("roe")
+    if roe is not None:
+        if roe > 0.25:   score += 20
+        elif roe > 0.15: score += 12
+        elif roe > 0.08: score += 5
+        elif roe < 0:    score -= 15
+
+    pm = fund.get("profit_margin")
+    if pm is not None:
+        if pm > 0.20:   score += 10
+        elif pm > 0.10: score += 5
+        elif pm < 0:    score -= 10
+
+    if fund.get("eps", 0) and fund["eps"] > 0:
+        score += 5  # Positive EPS bonus
+
+    return max(0.0, min(100.0, score))
+
+
+def compute_momentum_score(price_data):
+    """Short-term momentum score 0-100 based on recent price action."""
+    if not price_data or len(price_data) < 20:
+        return 50.0
+
+    closes = [p["close"] for p in price_data]  # newest first
+    current = closes[0]
+    sma5  = np.mean(closes[:5])
+    sma20 = np.mean(closes[:20])
+
+    score = 50.0
+
+    # Price position relative to SMA20
+    if current > sma20:
+        score += min(20, (current - sma20) / sma20 * 100 * 2)
+    else:
+        score -= min(20, (sma20 - current) / sma20 * 100 * 2)
+
+    # Short-term momentum crossover
+    score += 15 if sma5 > sma20 else -10
+
+    # Recent daily change
+    if len(closes) >= 2:
+        daily_pct = (closes[0] - closes[1]) / closes[1] * 100
+        if daily_pct > 1.5:     score += 10
+        elif daily_pct > 0:     score += 5
+        elif daily_pct < -1.5:  score -= 10
+        elif daily_pct < 0:     score -= 5
+
+    return max(0.0, min(100.0, score))
+
+
+def compute_quality_score(ml_confidence, fund_score, momentum_score):
+    """
+    Composite quality score: fundamentals 40% + ML confidence 40% + momentum 20%.
+    If fundamentals are unavailable (rate-limited / no data), redistributes
+    that weight to ML (65%) + momentum (35%).
+    """
+    if fund_score is None:
+        return round(ml_confidence * 0.65 + momentum_score * 0.35, 1)
+    return round(ml_confidence * 0.40 + fund_score * 0.40 + momentum_score * 0.20, 1)
+
+
+def quality_score_to_label(score, direction):
+    """Convert a quality_score to a human-readable buy/sell label."""
+    if direction == "bullish":
+        if score >= 70:  return "Strong Buy"
+        if score >= 55:  return "Moderate Buy"
+        return "Weak Buy"
+    else:
+        if score >= 70:  return "Strong Sell"
+        if score >= 55:  return "Moderate Sell"
+        return "Weak Sell"
+
 # ============ API HANDLER ============
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -443,19 +539,35 @@ class handler(BaseHTTPRequestHandler):
             return
         
         try:
-            prices = get_daily_prices(symbol)
+            # Fire all three network calls concurrently — they are fully independent
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                f_prices = ex.submit(get_daily_prices, symbol)
+                f_fund   = ex.submit(get_company_overview, symbol)
+                f_quote  = ex.submit(get_quote, symbol)
+                prices       = f_prices.result()
+                fundamentals = f_fund.result()
+                quote        = f_quote.result()
+
             if "error" in prices:
                 self._respond(400, {"error": prices["error"], "symbol": symbol})
                 return
-            
-            fundamentals = get_company_overview(symbol)
-            quote = get_quote(symbol)
+
+            # CPU-bound work runs after I/O is done
             indicators = calculate_all_indicators(prices["prices"])
             prediction = train_and_predict(prices["prices"], fundamentals)
-            
+
+            # ── 4-Pillar composite quality score ──
+            fund_score     = compute_fundamentals_score(fundamentals)   # pillar 2
+            momentum_score = compute_momentum_score(prices["prices"])   # pillar 1 (price action)
+            # pillar 3 = ML confidence, pillar 4 = chart data (display only)
+            quality_score  = compute_quality_score(
+                prediction["confidence"], fund_score, momentum_score
+            )
+            rating_label = quality_score_to_label(quality_score, prediction["direction"])
+
             # Use name from price meta if fundamentals failed
             name = fundamentals.get("name") or prices.get("meta", {}).get("name") or symbol
-            
+
             self._respond(200, {
                 "symbol": symbol,
                 "name": name,
@@ -475,7 +587,13 @@ class handler(BaseHTTPRequestHandler):
                     "beta": fundamentals.get("beta"),
                     "profit_margin": fundamentals.get("profit_margin"),
                 },
-                "prediction": prediction,
+                "prediction": {
+                    **prediction,
+                    "rating": rating_label,           # 4-pillar composite label
+                    "quality_score": quality_score,   # 0-100 composite score
+                    "fund_score": round(fund_score, 1) if fund_score is not None else None,
+                    "momentum_score": round(momentum_score, 1),
+                },
                 "chart_data": indicators.get("chart_data", {})
             })
         except Exception as e:

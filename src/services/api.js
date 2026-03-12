@@ -1,19 +1,56 @@
 /**
  * API Service for Stock Analysis
+ * Results are cached in localStorage per symbol per day.
+ * Stale at midnight so data stays current with market moves.
  */
 
 const API_BASE = '/api';
 
-export async function analyzeStock(symbol) {
+// ── Cache helpers ──────────────────────────────────────────────
+function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function analysisCacheKey(symbol) {
+    return `analyze_${symbol.toUpperCase()}_${todayStr()}`;
+}
+
+function readAnalysisCache(symbol) {
     try {
-        const response = await fetch(`${API_BASE}/analyze?symbol=${encodeURIComponent(symbol)}`);
+        const raw = localStorage.getItem(analysisCacheKey(symbol));
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        console.log(`Analyze (${symbol}): serving from daily cache`);
+        return data;
+    } catch (_) { return null; }
+}
+
+function writeAnalysisCache(symbol, data) {
+    try {
+        localStorage.setItem(analysisCacheKey(symbol), JSON.stringify(data));
+    } catch (_) { /* ignore quota errors */ }
+}
+
+// ── Public API ─────────────────────────────────────────────────
+export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
+    const key = symbol.trim().toUpperCase();
+
+    // Return cached result if available and not force-refreshing
+    if (!forceRefresh) {
+        const cached = readAnalysisCache(key);
+        if (cached) return cached;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/analyze?symbol=${encodeURIComponent(key)}`);
 
         // Check if response is HTML (error from Vite - API not running)
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
             console.log('API not available, using mock data');
             await new Promise(resolve => setTimeout(resolve, 1000));
-            return { ...mockData, symbol: symbol.toUpperCase() };
+            return { ...mockData, symbol: key };
         }
 
         const data = await response.json();
@@ -22,13 +59,25 @@ export async function analyzeStock(symbol) {
             throw new Error(data.error || 'Failed to analyze stock');
         }
 
+        // Cache the fresh result
+        writeAnalysisCache(key, data);
         return data;
     } catch (error) {
         console.error('API Error:', error);
-        // Fallback to mock data if API fails
+        // Try stale cache (any day) before falling back to mock data
+        try {
+            const keys = Object.keys(localStorage).filter(k => k.startsWith(`analyze_${key}_`));
+            if (keys.length > 0) {
+                const stale = JSON.parse(localStorage.getItem(keys[0]));
+                if (stale) {
+                    console.log(`Analyze (${key}): API failed, serving stale cache`);
+                    return stale;
+                }
+            }
+        } catch (_) { /* ignore */ }
         console.log('Falling back to mock data');
         await new Promise(resolve => setTimeout(resolve, 500));
-        return { ...mockData, symbol: symbol.toUpperCase() };
+        return { ...mockData, symbol: key };
     }
 }
 
