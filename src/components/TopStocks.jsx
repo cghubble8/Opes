@@ -7,17 +7,31 @@ function TopStocks({ onStockSelect }) {
     const [stocks, setStocks] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [isCached, setIsCached] = useState(false)
 
     useEffect(() => {
         loadTopStocks()
     }, [])
 
-    const loadTopStocks = async () => {
+    const loadTopStocks = async (forceRefresh = false) => {
         setLoading(true)
         setError(null)
         try {
-            const data = await getTopStocks()
+            // Check if we have a cache entry before fetching
+            const cacheRaw = localStorage.getItem('topstocks_cache')
+            const cacheValid = (() => {
+                try {
+                    if (!cacheRaw || forceRefresh) return false
+                    const { date } = JSON.parse(cacheRaw)
+                    const today = new Date()
+                    const key = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+                    return date === key
+                } catch { return false }
+            })()
+
+            const data = await getTopStocks({ forceRefresh })
             setStocks(data)
+            setIsCached(cacheValid)
         } catch (err) {
             setError(err.message)
         } finally {
@@ -60,11 +74,30 @@ function TopStocks({ onStockSelect }) {
         )
     }
 
+    const formatMarketCap = (cap) => {
+        if (!cap) return null
+        if (cap >= 1e12) return `$${(cap / 1e12).toFixed(1)}T`
+        if (cap >= 1e9) return `$${(cap / 1e9).toFixed(1)}B`
+        return `$${(cap / 1e6).toFixed(0)}M`
+    }
+
     return (
         <div className="top-stocks-container">
             <div className="top-stocks-header">
                 <h2>Top 5 Buy-Rated Stocks</h2>
-                <p>AI-powered analysis of market leaders</p>
+                <p>Ranked by quality score: fundamentals · AI signal · momentum</p>
+                <div className="refresh-row">
+                    {isCached && (
+                        <span className="cached-badge">📅 Cached today</span>
+                    )}
+                    <button
+                        className="refresh-btn"
+                        onClick={() => loadTopStocks(true)}
+                        title="Force refresh (uses Alpha Vantage quota)"
+                    >
+                        🔄 Refresh
+                    </button>
+                </div>
             </div>
 
             <div className="top-stocks-grid">
@@ -98,6 +131,24 @@ function TopStocks({ onStockSelect }) {
                             <div className={`prediction-badge ${stock.direction}`}>
                                 {stock.prediction}
                             </div>
+
+                            {/* Quality Score */}
+                            {stock.quality_score != null && (
+                                <div className="quality-score-section">
+                                    <div className="confidence-header">
+                                        <span>Quality Score</span>
+                                        <span className="confidence-value">{stock.quality_score.toFixed(1)}</span>
+                                    </div>
+                                    <div className="confidence-bar-container">
+                                        <div
+                                            className={`confidence-bar-fill ${stock.quality_score > 70 ? 'high' : stock.quality_score > 50 ? 'medium' : 'low'}`}
+                                            style={{ width: `${stock.quality_score}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* AI Confidence */}
                             <div className="confidence-section">
                                 <div className="confidence-header">
                                     <span>AI Confidence</span>
@@ -110,6 +161,22 @@ function TopStocks({ onStockSelect }) {
                                     ></div>
                                 </div>
                             </div>
+
+                            {/* Fundamentals row */}
+                            {stock.fundamentals && !stock.fundamentals.rate_limited && (
+                                <div className="fundamentals-mini">
+                                    {stock.fundamentals.pe_ratio != null && (
+                                        <span className="fund-chip">P/E {stock.fundamentals.pe_ratio.toFixed(1)}</span>
+                                    )}
+                                    {stock.fundamentals.roe != null && (
+                                        <span className="fund-chip">ROE {(stock.fundamentals.roe * 100).toFixed(1)}%</span>
+                                    )}
+                                    {stock.fundamentals.market_cap != null && (
+                                        <span className="fund-chip">{formatMarketCap(stock.fundamentals.market_cap)}</span>
+                                    )}
+                                </div>
+                            )}
+
                             <p className="stock-reasoning">{stock.reasoning}</p>
                         </div>
 
@@ -121,7 +188,7 @@ function TopStocks({ onStockSelect }) {
             </div>
 
             <div className="demo-notice">
-                <span>Live market data via yfinance</span>
+                <span>Prices via Yahoo Finance · Fundamentals via Alpha Vantage</span>
             </div>
         </div>
     )

@@ -68,7 +68,45 @@ export const topStocksMockData = [
     },
 ];
 
-export async function getTopStocks() {
+const CACHE_KEY = 'topstocks_cache';
+
+/**
+ * Returns today's date string (YYYY-MM-DD) in local time.
+ * Used as the cache key so results refresh daily.
+ */
+function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Read a valid cache entry for today. Returns null if stale or missing. */
+function readCache() {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const { date, stocks } = JSON.parse(raw);
+        if (date === todayKey() && Array.isArray(stocks) && stocks.length > 0) {
+            console.log('Top Stocks: serving from daily cache');
+            return stocks;
+        }
+    } catch (_) { /* ignore parse errors */ }
+    return null;
+}
+
+/** Persist results to localStorage with today's date. */
+function writeCache(stocks) {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ date: todayKey(), stocks }));
+    } catch (_) { /* ignore quota errors */ }
+}
+
+export async function getTopStocks({ forceRefresh = false } = {}) {
+    // Serve from cache if we already fetched today and forceRefresh is not set
+    if (!forceRefresh) {
+        const cached = readCache();
+        if (cached) return cached;
+    }
+
     try {
         const response = await fetch(`${API_BASE}/topstocks`);
 
@@ -86,8 +124,9 @@ export async function getTopStocks() {
             throw new Error(data.error || 'Failed to fetch top stocks');
         }
 
-        // Return the stocks from API response
+        // Cache and return live results
         if (data.stocks && data.stocks.length > 0) {
+            writeCache(data.stocks);
             return data.stocks;
         }
 
@@ -96,7 +135,17 @@ export async function getTopStocks() {
         return topStocksMockData;
     } catch (error) {
         console.error('API Error:', error);
-        // Fallback to mock data if API fails
+        // Before using mock data, try to return a stale cache (any day) as a better fallback
+        try {
+            const raw = localStorage.getItem(CACHE_KEY);
+            if (raw) {
+                const { stocks } = JSON.parse(raw);
+                if (Array.isArray(stocks) && stocks.length > 0) {
+                    console.log('Top Stocks: API failed, serving stale cache');
+                    return stocks;
+                }
+            }
+        } catch (_) { /* ignore */ }
         console.log('Falling back to mock data');
         await new Promise(resolve => setTimeout(resolve, 500));
         return topStocksMockData;

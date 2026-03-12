@@ -959,6 +959,41 @@
 .top-stocks-header p {
   color: var(--text-muted);
   font-size: 0.9375rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
+.cached-badge {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  padding: 4px 12px;
+  border-radius: 9999px;
+}
+
+.refresh-btn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  background: transparent;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 4px 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.refresh-btn:hover {
+  background: rgba(34, 211, 238, 0.1);
+  border-color: var(--accent-cyan);
 }
 
 .top-stocks-grid {
@@ -1129,9 +1164,34 @@
   color: var(--danger-light);
 }
 
+/* Quality Score Section */
+.quality-score-section {
+  margin-bottom: var(--spacing-sm);
+}
+
 /* Confidence Section */
 .confidence-section {
   margin-bottom: var(--spacing-sm);
+}
+
+/* Fundamentals Mini Chips */
+.fundamentals-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.fund-chip {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: var(--accent-cyan);
+  letter-spacing: 0.03em;
 }
 
 .confidence-header {
