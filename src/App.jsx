@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ComposedChart } from 'recharts'
 import { analyzeStock, mockData } from './services/api'
+import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
 import Login from './components/Login'
@@ -180,10 +181,7 @@ function App() {
 
           {/* Loading State */}
           {loading && (
-            <div className="loading-container">
-              <div className="loading-spinner"></div>
-              <p className="loading-text">Analyzing {symbol}... Fetching data, calculating indicators, and running ML model</p>
-            </div>
+            <CandlestickLoader message={`Analyzing ${symbol}\u2026 fetching data, calculating indicators & running ML model`} />
           )}
 
           {/* Error State */}

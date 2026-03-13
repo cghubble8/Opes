@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { AreaChart, Area, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { getPortfolio } from '../services/portfolio'
+import CandlestickLoader from './CandlestickLoader'
 
 function Portfolio({ onStockSelect }) {
     const [portfolio, setPortfolio] = useState(null)
@@ -64,17 +65,7 @@ function Portfolio({ onStockSelect }) {
     if (loading) {
         return (
             <div className="portfolio-container">
-                <div className="portfolio-hero skeleton-hero">
-                    <div className="skeleton-chart"></div>
-                </div>
-                <div className="holdings-section">
-                    {[1, 2, 3].map(i => (
-                        <div key={i} className="holding-card-new card skeleton">
-                            <div className="skeleton-line wide"></div>
-                            <div className="skeleton-line medium"></div>
-                        </div>
-                    ))}
-                </div>
+                <CandlestickLoader message="Loading your portfolio\u2026" />
             </div>
         )
     }

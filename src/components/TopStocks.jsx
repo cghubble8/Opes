@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getTopStocks } from '../services/topStocks'
+import CandlestickLoader from './CandlestickLoader'
 
 const rankEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣']
 
@@ -42,22 +43,7 @@ function TopStocks({ onStockSelect }) {
     if (loading) {
         return (
             <div className="top-stocks-container">
-                <div className="top-stocks-header">
-                    <h2>Top 5 Buy-Rated Stocks</h2>
-                    <p>AI-powered analysis of market leaders</p>
-                </div>
-                <div className="top-stocks-grid">
-                    {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} className="stock-rank-card skeleton">
-                            <div className="skeleton-rank"></div>
-                            <div className="skeleton-content">
-                                <div className="skeleton-line wide"></div>
-                                <div className="skeleton-line medium"></div>
-                                <div className="skeleton-line narrow"></div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                <CandlestickLoader message="Ranking top stocks by quality score\u2026" />
             </div>
         )
     }
