@@ -6,6 +6,10 @@
 
 const API_BASE = '/api';
 
+// Bump this when a deployment changes the data shape or fixes bad cached data.
+// Any localStorage entry from an older version is automatically discarded.
+const CACHE_VERSION = 2;
+
 // ── Cache helpers ──────────────────────────────────────────────
 function todayStr() {
     const d = new Date();
@@ -13,11 +17,22 @@ function todayStr() {
 }
 
 function analysisCacheKey(symbol) {
-    return `analyze_${symbol.toUpperCase()}_${todayStr()}`;
+    return `analyze_v${CACHE_VERSION}_${symbol.toUpperCase()}_${todayStr()}`;
+}
+
+/** Wipe any analyze cache entries that don't have the current version prefix. */
+function clearStaleCacheEntries() {
+    try {
+        const currentPrefix = `analyze_v${CACHE_VERSION}_`;
+        Object.keys(localStorage)
+            .filter(k => k.startsWith('analyze_') && !k.startsWith(currentPrefix))
+            .forEach(k => localStorage.removeItem(k));
+    } catch (_) { /* ignore */ }
 }
 
 function readAnalysisCache(symbol) {
     try {
+        clearStaleCacheEntries(); // purge old-version entries on every read
         const raw = localStorage.getItem(analysisCacheKey(symbol));
         if (!raw) return null;
         const data = JSON.parse(raw);
@@ -48,9 +63,7 @@ export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
         // Check if response is HTML (error from Vite - API not running)
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
-            console.log('API not available, using mock data');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            return { ...mockData, symbol: key };
+            throw new Error(`Backend API is not running. Please start the Python server and try again.`);
         }
 
         const data = await response.json();
@@ -64,9 +77,9 @@ export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
         return data;
     } catch (error) {
         console.error('API Error:', error);
-        // Try stale cache (any day) before falling back to mock data
+        // Try stale cache (same version, any day) before surfacing the error
         try {
-            const keys = Object.keys(localStorage).filter(k => k.startsWith(`analyze_${key}_`));
+            const keys = Object.keys(localStorage).filter(k => k.startsWith(`analyze_v${CACHE_VERSION}_${key}_`));
             if (keys.length > 0) {
                 const stale = JSON.parse(localStorage.getItem(keys[0]));
                 if (stale) {
@@ -75,9 +88,8 @@ export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
                 }
             }
         } catch (_) { /* ignore */ }
-        console.log('Falling back to mock data');
-        await new Promise(resolve => setTimeout(resolve, 500));
-        return { ...mockData, symbol: key };
+        // Re-throw so the UI shows the real error instead of misleading mock data
+        throw error;
     }
 }
 
