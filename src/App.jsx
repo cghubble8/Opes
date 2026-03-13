@@ -250,14 +250,12 @@ function App() {
                             <div className="rsi-marker" style={{ left: `${data.indicators.rsi}%` }}></div>
                           </div>
                         )}
-                        <span className="flip-hint">ℹ️ tap to learn more</span>
                       </div>
                     </div>
                     <div className="flip-card-back">
                       <div className="flip-card-back-icon">{indicatorDefs.rsi.icon}</div>
                       <div className="flip-card-back-title">{indicatorDefs.rsi.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.rsi.desc}</p>
-                      <div className="flip-card-back-hint">tap to flip back</div>
                     </div>
                   </div>
                 </div>
@@ -278,14 +276,12 @@ function App() {
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
                           Signal: {data.indicators?.macd_signal?.toFixed(4) || 'N/A'}
                         </p>
-                        <span className="flip-hint">ℹ️ tap to learn more</span>
                       </div>
                     </div>
                     <div className="flip-card-back">
                       <div className="flip-card-back-icon">{indicatorDefs.macd.icon}</div>
                       <div className="flip-card-back-title">{indicatorDefs.macd.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.macd.desc}</p>
-                      <div className="flip-card-back-hint">tap to flip back</div>
                     </div>
                   </div>
                 </div>
@@ -306,14 +302,12 @@ function App() {
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
                           SMA20: ${data.indicators?.sma_20?.toFixed(2)} | SMA50: ${data.indicators?.sma_50?.toFixed(2)}
                         </p>
-                        <span className="flip-hint">ℹ️ tap to learn more</span>
                       </div>
                     </div>
                     <div className="flip-card-back">
                       <div className="flip-card-back-icon">{indicatorDefs.trend.icon}</div>
                       <div className="flip-card-back-title">{indicatorDefs.trend.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.trend.desc}</p>
-                      <div className="flip-card-back-hint">tap to flip back</div>
                     </div>
                   </div>
                 </div>
@@ -334,14 +328,12 @@ function App() {
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
                           Upper: ${data.indicators?.bollinger_upper?.toFixed(2)} | Lower: ${data.indicators?.bollinger_lower?.toFixed(2)}
                         </p>
-                        <span className="flip-hint">ℹ️ tap to learn more</span>
                       </div>
                     </div>
                     <div className="flip-card-back">
                       <div className="flip-card-back-icon">{indicatorDefs.bollinger.icon}</div>
                       <div className="flip-card-back-title">{indicatorDefs.bollinger.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.bollinger.desc}</p>
-                      <div className="flip-card-back-hint">tap to flip back</div>
                     </div>
                   </div>
                 </div>
