@@ -13,7 +13,7 @@
 .login-card {
   width: 100%;
   max-width: 400px;
-  background: linear-gradient(145deg, rgba(26, 35, 64, 0.95), rgba(15, 22, 41, 0.9));
+  background: #141414;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   padding: var(--spacing-2xl);
@@ -43,7 +43,7 @@
 .logo-text {
   font-size: 2rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #fff 0%, var(--accent-cyan) 100%);
+  background: linear-gradient(135deg, #fff 0%, var(--accent-green) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -147,9 +147,9 @@
   width: 100%;
   padding: 14px;
   background: transparent;
-  border: 2px solid var(--accent-cyan);
+  border: 2px solid var(--accent-green);
   border-radius: var(--radius-md);
-  color: var(--accent-cyan);
+  color: var(--accent-green);
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
@@ -157,9 +157,9 @@
 }
 
 .demo-login-btn:hover {
-  background: rgba(6, 182, 212, 0.1);
+  background: rgba(0, 200, 5, 0.08);
   transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(6, 182, 212, 0.2);
+  box-shadow: 0 4px 15px rgba(0, 200, 5, 0.18);
 }
 
 .demo-login-btn:disabled {
@@ -188,13 +188,13 @@
   position: absolute;
   border-radius: 50%;
   filter: blur(80px);
-  opacity: 0.4;
+  opacity: 0.15;
 }
 
 .bg-circle-1 {
   width: 400px;
   height: 400px;
-  background: var(--accent-blue);
+  background: var(--accent-green);
   top: -200px;
   right: -100px;
   animation: float 8s ease-in-out infinite;
@@ -203,7 +203,7 @@
 .bg-circle-2 {
   width: 300px;
   height: 300px;
-  background: var(--accent-cyan);
+  background: var(--success-light);
   bottom: -150px;
   left: -100px;
   animation: float 10s ease-in-out infinite reverse;
@@ -212,7 +212,7 @@
 .bg-circle-3 {
   width: 200px;
   height: 200px;
-  background: linear-gradient(135deg, var(--accent-blue), var(--success));
+  background: var(--accent-green);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -296,7 +296,7 @@
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #fff 0%, var(--accent-cyan) 100%);
+  background: linear-gradient(135deg, #fff 0%, var(--accent-green) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -355,10 +355,10 @@
 }
 
 .nav-tab.active {
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  background: var(--accent-green);
   border-color: transparent;
-  color: white;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+  color: #000;
+  box-shadow: 0 4px 15px rgba(0, 200, 5, 0.25);
 }
 
 /* Search - floating card style */
@@ -421,7 +421,7 @@
 
 /* Error */
 .error-container {
-  background: linear-gradient(145deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.03));
+  background: rgba(255, 59, 48, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: var(--radius-lg);
   padding: var(--spacing-xl);
@@ -467,7 +467,7 @@
   flex-wrap: wrap;
   gap: var(--spacing-lg);
   padding: var(--spacing-xl);
-  background: linear-gradient(145deg, rgba(26, 35, 64, 0.8), rgba(15, 22, 41, 0.6));
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
@@ -475,7 +475,7 @@
 }
 
 .stock-header.glass {
-  background: linear-gradient(145deg, rgba(26, 35, 64, 0.9), rgba(15, 22, 41, 0.7));
+  background: var(--bg-card);
 }
 
 .stock-info h2 {
@@ -485,7 +485,7 @@
 }
 
 .stock-symbol {
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  background: linear-gradient(135deg, var(--accent-green), var(--success-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -567,7 +567,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  background: var(--accent-green);
   transform: scaleX(0);
   transition: transform var(--transition-normal);
 }
@@ -700,7 +700,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.08), transparent 50%);
+  background: radial-gradient(circle at 50% 0%, rgba(0, 200, 5, 0.05), transparent 50%);
   pointer-events: none;
 }
 
@@ -904,11 +904,11 @@
 }
 
 .stock-chip:hover {
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  background: var(--accent-green);
   border-color: transparent;
   color: white;
   transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 6px 20px rgba(0, 200, 5, 0.25);
 }
 
 /* Responsive */
@@ -950,7 +950,7 @@
 .top-stocks-header h2 {
   font-size: 1.75rem;
   margin-bottom: var(--spacing-xs);
-  background: linear-gradient(135deg, #ffd700, #ffaa00);
+  background: linear-gradient(135deg, var(--accent-green), var(--success-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -970,7 +970,7 @@
 
 /* Stock Rank Card */
 .stock-rank-card {
-  background: linear-gradient(145deg, rgba(26, 35, 64, 0.9), rgba(15, 22, 41, 0.7));
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   padding: var(--spacing-lg);
@@ -987,7 +987,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #ffd700, #ffaa00);
+  background: var(--accent-green);
   transform: scaleX(0);
   transition: transform var(--transition-normal);
 }
@@ -1005,17 +1005,17 @@
 /* Rank-specific gradients */
 .stock-rank-card.rank-1 {
   border-color: rgba(255, 215, 0, 0.3);
-  background: linear-gradient(145deg, rgba(255, 215, 0, 0.1), rgba(15, 22, 41, 0.9));
+  background: rgba(0, 200, 5, 0.06);
 }
 
 .stock-rank-card.rank-2 {
   border-color: rgba(192, 192, 192, 0.3);
-  background: linear-gradient(145deg, rgba(192, 192, 192, 0.08), rgba(15, 22, 41, 0.9));
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .stock-rank-card.rank-3 {
   border-color: rgba(205, 127, 50, 0.3);
-  background: linear-gradient(145deg, rgba(205, 127, 50, 0.08), rgba(15, 22, 41, 0.9));
+  background: rgba(255, 255, 255, 0.02);
 }
 
 /* Rank Badge */
@@ -1053,7 +1053,7 @@
 .stock-rank-symbol {
   font-size: 1.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  background: linear-gradient(135deg, var(--accent-green), var(--success-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1189,13 +1189,13 @@
 
 .view-details span {
   font-size: 0.8125rem;
-  color: var(--accent-cyan);
+  color: var(--accent-green);
   font-weight: 600;
   transition: color var(--transition-fast);
 }
 
 .stock-rank-card:hover .view-details span {
-  color: var(--accent-blue);
+  color: var(--success-light);
 }
 
 /* Demo Notice */
@@ -1284,7 +1284,7 @@
     gap: var(--spacing-md);
     padding: var(--spacing-md) var(--spacing-lg);
     padding-bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom, 0px));
-    background: rgba(10, 10, 15, 0.95);
+    background: rgba(0, 0, 0, 0.96);
     backdrop-filter: blur(20px);
     border-top: 1px solid var(--border-color);
     margin: 0;
@@ -1317,7 +1317,7 @@
 
 /* Hero Section with Chart */
 .portfolio-hero {
-  background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+  background: var(--bg-card);
   border-radius: var(--radius-xl);
   padding: var(--spacing-xl);
   margin-bottom: var(--spacing-lg);
@@ -1401,9 +1401,9 @@
 }
 
 .period-btn.active {
-  background: var(--accent-blue);
-  border-color: var(--accent-blue);
-  color: white;
+  background: var(--accent-green);
+  border-color: var(--accent-green);
+  color: #000;
 }
 
 /* Stats Row */
@@ -1508,7 +1508,7 @@
   width: 44px;
   height: 44px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  background: linear-gradient(135deg, var(--accent-green), var(--success-light));
   display: flex;
   align-items: center;
   justify-content: center;
