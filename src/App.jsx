@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ComposedChart } from 'recharts'
 import { analyzeStock, mockData } from './services/api'
+import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
 import Login from './components/Login'
@@ -8,6 +9,38 @@ import './App.css'
 
 function App() {
   const [symbol, setSymbol] = useState('')
+  const [flippedCards, setFlippedCards] = useState(new Set())
+
+  const toggleFlip = (cardId) => {
+    setFlippedCards(prev => {
+      const next = new Set(prev)
+      next.has(cardId) ? next.delete(cardId) : next.add(cardId)
+      return next
+    })
+  }
+
+  const indicatorDefs = {
+    rsi: {
+      icon: '📉',
+      title: 'RSI — Relative Strength Index',
+      desc: 'Measures how overbought or oversold a stock is on a 0–100 scale. Above 70 = likely overbought (due for a pullback). Below 30 = likely oversold (potential bounce). The sweet spot for buying is often 40–60.',
+    },
+    macd: {
+      icon: '📊',
+      title: 'MACD — Moving Avg Convergence Divergence',
+      desc: 'Tracks momentum by comparing two moving averages. When the MACD line crosses above its signal line, it\'s a bullish sign. When it crosses below, it\'s bearish. Think of it as a momentum speedometer.',
+    },
+    trend: {
+      icon: '📈',
+      title: 'Moving Averages & Trend',
+      desc: 'Compares the 20-day and 50-day average prices to identify the trend direction. Price above both averages = uptrend. Below both = downtrend. Traders use these as dynamic support and resistance levels.',
+    },
+    bollinger: {
+      icon: '🎯',
+      title: 'Bollinger Bands',
+      desc: 'Two bands plotted around a 20-day moving average. When price touches the upper band, it may be overextended. Near the lower band, it may be undervalued. A squeeze (bands narrowing) often signals a big move ahead.',
+    },
+  }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
@@ -148,10 +181,7 @@ function App() {
 
           {/* Loading State */}
           {loading && (
-            <div className="loading-container">
-              <div className="loading-spinner"></div>
-              <p className="loading-text">Analyzing {symbol}... Fetching data, calculating indicators, and running ML model</p>
-            </div>
+            <CandlestickLoader message={`Analyzing ${symbol}\u2026 fetching data, calculating indicators & running ML model`} />
           )}
 
           {/* Error State */}
@@ -201,53 +231,109 @@ function App() {
               {/* Technical Indicators Grid */}
               <div className="indicators-grid">
                 {/* RSI */}
-                <div className="card indicator-card">
-                  <h3>📉 RSI (14)</h3>
-                  <div className="indicator-value">{data.indicators?.rsi?.toFixed(1) || 'N/A'}</div>
-                  <div className={`indicator-signal signal-${data.signals?.rsi?.toLowerCase().replace(' ', '-')}`}>
-                    {data.signals?.rsi}
-                  </div>
-                  {data.indicators?.rsi && (
-                    <div className="rsi-gauge">
-                      <div className="rsi-marker" style={{ left: `${data.indicators.rsi}%` }}></div>
+                <div
+                  className={`flip-card-wrapper ${flippedCards.has('rsi') ? 'flipped' : ''}`}
+                  onClick={() => toggleFlip('rsi')}
+                >
+                  <div className="flip-card-inner">
+                    <div className="flip-card-front">
+                      <div className="card indicator-card">
+                        <h3>📉 RSI (14)</h3>
+                        <div className="indicator-value">{data.indicators?.rsi?.toFixed(1) || 'N/A'}</div>
+                        <div className={`indicator-signal signal-${data.signals?.rsi?.toLowerCase().replace(' ', '-')}`}>
+                          {data.signals?.rsi}
+                        </div>
+                        {data.indicators?.rsi && (
+                          <div className="rsi-gauge">
+                            <div className="rsi-marker" style={{ left: `${data.indicators.rsi}%` }}></div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                    <div className="flip-card-back">
+                      <div className="flip-card-back-icon">{indicatorDefs.rsi.icon}</div>
+                      <div className="flip-card-back-title">{indicatorDefs.rsi.title}</div>
+                      <p className="flip-card-back-desc">{indicatorDefs.rsi.desc}</p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* MACD */}
-                <div className="card indicator-card">
-                  <h3>📊 MACD</h3>
-                  <div className="indicator-value">{data.indicators?.macd?.toFixed(4) || 'N/A'}</div>
-                  <div className={`indicator-signal signal-${data.signals?.macd?.toLowerCase()}`}>
-                    {data.signals?.macd}
+                <div
+                  className={`flip-card-wrapper ${flippedCards.has('macd') ? 'flipped' : ''}`}
+                  onClick={() => toggleFlip('macd')}
+                >
+                  <div className="flip-card-inner">
+                    <div className="flip-card-front">
+                      <div className="card indicator-card">
+                        <h3>📊 MACD</h3>
+                        <div className="indicator-value">{data.indicators?.macd?.toFixed(4) || 'N/A'}</div>
+                        <div className={`indicator-signal signal-${data.signals?.macd?.toLowerCase()}`}>
+                          {data.signals?.macd}
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
+                          Signal: {data.indicators?.macd_signal?.toFixed(4) || 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flip-card-back">
+                      <div className="flip-card-back-icon">{indicatorDefs.macd.icon}</div>
+                      <div className="flip-card-back-title">{indicatorDefs.macd.title}</div>
+                      <p className="flip-card-back-desc">{indicatorDefs.macd.desc}</p>
+                    </div>
                   </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
-                    Signal: {data.indicators?.macd_signal?.toFixed(4) || 'N/A'}
-                  </p>
                 </div>
 
                 {/* Moving Averages */}
-                <div className="card indicator-card">
-                  <h3>📈 Moving Averages</h3>
-                  <div className="indicator-value">{data.signals?.trend}</div>
-                  <div className={`indicator-signal signal-${data.signals?.trend?.toLowerCase().replace(' ', '-')}`}>
-                    {data.signals?.trend}
+                <div
+                  className={`flip-card-wrapper ${flippedCards.has('trend') ? 'flipped' : ''}`}
+                  onClick={() => toggleFlip('trend')}
+                >
+                  <div className="flip-card-inner">
+                    <div className="flip-card-front">
+                      <div className="card indicator-card">
+                        <h3>📈 Moving Averages</h3>
+                        <div className="indicator-value">{data.signals?.trend}</div>
+                        <div className={`indicator-signal signal-${data.signals?.trend?.toLowerCase().replace(' ', '-')}`}>
+                          {data.signals?.trend}
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
+                          SMA20: ${data.indicators?.sma_20?.toFixed(2)} | SMA50: ${data.indicators?.sma_50?.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flip-card-back">
+                      <div className="flip-card-back-icon">{indicatorDefs.trend.icon}</div>
+                      <div className="flip-card-back-title">{indicatorDefs.trend.title}</div>
+                      <p className="flip-card-back-desc">{indicatorDefs.trend.desc}</p>
+                    </div>
                   </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
-                    SMA20: ${data.indicators?.sma_20?.toFixed(2)} | SMA50: ${data.indicators?.sma_50?.toFixed(2)}
-                  </p>
                 </div>
 
                 {/* Bollinger Bands */}
-                <div className="card indicator-card">
-                  <h3>🎯 Bollinger Bands</h3>
-                  <div className="indicator-value">{data.signals?.bollinger}</div>
-                  <div className={`indicator-signal signal-${data.signals?.bollinger?.toLowerCase().replace(/ /g, '-')}`}>
-                    {data.signals?.bollinger}
+                <div
+                  className={`flip-card-wrapper ${flippedCards.has('bollinger') ? 'flipped' : ''}`}
+                  onClick={() => toggleFlip('bollinger')}
+                >
+                  <div className="flip-card-inner">
+                    <div className="flip-card-front">
+                      <div className="card indicator-card">
+                        <h3>🎯 Bollinger Bands</h3>
+                        <div className="indicator-value">{data.signals?.bollinger}</div>
+                        <div className={`indicator-signal signal-${data.signals?.bollinger?.toLowerCase().replace(/ /g, '-')}`}>
+                          {data.signals?.bollinger}
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
+                          Upper: ${data.indicators?.bollinger_upper?.toFixed(2)} | Lower: ${data.indicators?.bollinger_lower?.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flip-card-back">
+                      <div className="flip-card-back-icon">{indicatorDefs.bollinger.icon}</div>
+                      <div className="flip-card-back-title">{indicatorDefs.bollinger.title}</div>
+                      <p className="flip-card-back-desc">{indicatorDefs.bollinger.desc}</p>
+                    </div>
                   </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
-                    Upper: ${data.indicators?.bollinger_upper?.toFixed(2)} | Lower: ${data.indicators?.bollinger_lower?.toFixed(2)}
-                  </p>
                 </div>
               </div>
 
@@ -286,30 +372,56 @@ function App() {
                   </div>
                 </div>
 
-                {/* ML Prediction */}
+                {/* AI Prediction — 4-Pillar Rating */}
                 <div className="card prediction-card">
                   <div className="prediction-icon">
                     {data.prediction?.direction === 'bullish' ? '🚀' : data.prediction?.direction === 'bearish' ? '📉' : '➡️'}
                   </div>
-                  <h3>AI Prediction</h3>
+                  <h3>4-Pillar Rating</h3>
+
+                  {/* Composite rating label */}
                   <div className={`prediction-title ${data.prediction?.direction}`}>
-                    {data.prediction?.prediction}
+                    {data.prediction?.rating || data.prediction?.prediction}
                   </div>
-                  <div className="confidence-meter">
-                    <div className="confidence-label">
-                      <span>Confidence</span>
-                      <span>{data.prediction?.confidence}%</span>
+
+                  {/* Quality Score bar */}
+                  {data.prediction?.quality_score != null && (
+                    <div className="confidence-meter">
+                      <div className="confidence-label">
+                        <span>Quality Score</span>
+                        <span>{data.prediction.quality_score.toFixed(1)} / 100</span>
+                      </div>
+                      <div className="confidence-bar">
+                        <div
+                          className={`confidence-fill ${data.prediction.quality_score > 70 ? 'high' : data.prediction.quality_score > 50 ? 'medium' : 'low'}`}
+                          style={{ width: `${data.prediction.quality_score}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="confidence-bar">
-                      <div
-                        className={`confidence-fill ${data.prediction?.confidence > 70 ? 'high' : data.prediction?.confidence > 50 ? 'medium' : 'low'}`}
-                        style={{ width: `${data.prediction?.confidence}%` }}
-                      ></div>
+                  )}
+
+                  {/* Sub-score breakdown */}
+                  <div className="pillar-breakdown">
+                    <div className="pillar-row">
+                      <span className="pillar-label">🤖 AI Confidence</span>
+                      <span className="pillar-value">{data.prediction?.confidence}%</span>
+                    </div>
+                    {data.prediction?.fund_score != null && (
+                      <div className="pillar-row">
+                        <span className="pillar-label">💼 Fundamentals</span>
+                        <span className="pillar-value">{data.prediction.fund_score.toFixed(1)}</span>
+                      </div>
+                    )}
+                    <div className="pillar-row">
+                      <span className="pillar-label">📈 Momentum</span>
+                      <span className="pillar-value">{data.prediction?.momentum_score?.toFixed(1)}</span>
                     </div>
                   </div>
+
                   <p className="prediction-reasoning">{data.prediction?.reasoning}</p>
                   <p className="model-accuracy">Model Training Accuracy: {data.prediction?.model_accuracy}%</p>
                 </div>
+
               </div>
 
               {/* Fundamentals */}

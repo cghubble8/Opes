@@ -404,20 +404,123 @@
   border-radius: var(--radius-md);
 }
 
-/* Loading */
-.loading-container {
+/* ── CandlestickLoader ── */
+.cs-loader-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  min-height: 260px;
+}
+
+.cs-loader-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--spacing-2xl);
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
+  padding: var(--spacing-2xl) var(--spacing-xl);
+  background: linear-gradient(145deg, rgba(26,35,64,0.85), rgba(10,10,15,0.9));
+  border: 1px solid rgba(99,102,241,0.2);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 60px -10px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.08);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  min-width: 300px;
 }
 
-.loading-text {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  animation: pulse 2s ease-in-out infinite;
+/* Ambient glow */
+.cs-glow {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 120px;
+  background: radial-gradient(ellipse, rgba(99,102,241,0.25) 0%, transparent 70%);
+  pointer-events: none;
+  animation: cs-glow-pulse 2.4s ease-in-out infinite;
 }
+
+@keyframes cs-glow-pulse {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1);   }
+  50%       { opacity: 1;   transform: translateX(-50%) scale(1.15); }
+}
+
+/* SVG canvas */
+.cs-svg {
+  width: 220px;
+  height: 100px;
+}
+
+/* Each candle group pulses in sequence */
+.cs-candle {
+  transform-origin: center bottom;
+  animation: cs-candle-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cs-candle-pulse {
+  0%, 100% { opacity: 0.45; transform: scaleY(0.92); }
+  50%       { opacity: 1;    transform: scaleY(1);    }
+}
+
+/* Horizontal scan line sweeping across */
+.cs-scan-line {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  width: 60px;
+  height: 100px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(99,102,241,0.18) 40%,
+    rgba(6,182,212,0.22) 60%,
+    transparent 100%
+  );
+  animation: cs-scan 2s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes cs-scan {
+  from { transform: translateX(-60px); }
+  to   { transform: translateX(300px); }
+}
+
+/* Message text */
+.cs-message {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.5;
+  max-width: 260px;
+  margin: 0;
+}
+
+/* Animated dot trail */
+.cs-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.cs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  animation: cs-dot-bounce 1.2s ease-in-out infinite;
+}
+
+@keyframes cs-dot-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40%            { transform: scale(1);   opacity: 1;   }
+}
+
+/* Keep old names as no-ops so nothing breaks if referenced elsewhere */
+.loading-container { display: contents; }
+.loading-text { display: none; }
+.loading-spinner { display: none; }
 
 /* Error */
 .error-container {
@@ -553,11 +656,109 @@
   }
 }
 
-/* Indicator Card */
+/* ── Flip Card wrapper ── */
+.flip-card-wrapper {
+  perspective: 1000px;
+  /* must match the card height — let content size it */
+  min-height: 180px;
+}
+
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  transition: transform 0.55s cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  transform-style: preserve-3d;
+  cursor: pointer;
+}
+
+.flip-card-wrapper.flipped .flip-card-inner {
+  transform: rotateY(180deg);
+}
+
+/* Front face */
+.flip-card-front,
+.flip-card-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Back face — rotated 180° so it shows when flipped */
+.flip-card-back {
+  transform: rotateY(180deg);
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.15), rgba(15, 22, 41, 0.95));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  padding: var(--spacing-lg);
+  text-align: center;
+  gap: var(--spacing-sm);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.flip-card-back-icon {
+  font-size: 2rem;
+  margin-bottom: 4px;
+  filter: drop-shadow(0 2px 8px rgba(99, 102, 241, 0.4));
+}
+
+.flip-card-back-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent-cyan);
+  margin-bottom: 2px;
+}
+
+.flip-card-back-desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.flip-card-back-hint {
+  margin-top: auto;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  padding-top: var(--spacing-sm);
+  width: 100%;
+  text-align: center;
+}
+
+/* "tap to flip" hint on front */
+.flip-hint {
+  position: absolute;
+  bottom: var(--spacing-sm);
+  right: var(--spacing-sm);
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  pointer-events: none;
+  letter-spacing: 0.05em;
+}
+
+.flip-card-wrapper:hover .flip-hint {
+  opacity: 1;
+}
+
+/* Indicator Card — lives inside the front face */
 .indicator-card {
   padding: var(--spacing-lg);
   position: relative;
   overflow: hidden;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .indicator-card::before {
@@ -572,7 +773,7 @@
   transition: transform var(--transition-normal);
 }
 
-.indicator-card:hover::before {
+.flip-card-wrapper:hover .indicator-card::before {
   transform: scaleX(1);
 }
 
@@ -799,6 +1000,35 @@
   font-size: 0.75rem;
 }
 
+/* 4-Pillar sub-score breakdown */
+.pillar-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.pillar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+}
+
+.pillar-label {
+  color: var(--text-secondary);
+}
+
+.pillar-value {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
 /* Fundamentals */
 .fundamentals-card {
   padding: var(--spacing-lg);
@@ -959,6 +1189,41 @@
 .top-stocks-header p {
   color: var(--text-muted);
   font-size: 0.9375rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+}
+
+.cached-badge {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  padding: 4px 12px;
+  border-radius: 9999px;
+}
+
+.refresh-btn {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  background: transparent;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 4px 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.refresh-btn:hover {
+  background: rgba(34, 211, 238, 0.1);
+  border-color: var(--accent-cyan);
 }
 
 .top-stocks-grid {
@@ -1129,9 +1394,34 @@
   color: var(--danger-light);
 }
 
+/* Quality Score Section */
+.quality-score-section {
+  margin-bottom: var(--spacing-sm);
+}
+
 /* Confidence Section */
 .confidence-section {
   margin-bottom: var(--spacing-sm);
+}
+
+/* Fundamentals Mini Chips */
+.fundamentals-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.fund-chip {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: var(--accent-cyan);
+  letter-spacing: 0.03em;
 }
 
 .confidence-header {
