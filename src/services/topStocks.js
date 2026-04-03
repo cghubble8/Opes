@@ -85,10 +85,7 @@ function readCache() {
         const raw = localStorage.getItem(CACHE_KEY);
         if (!raw) return null;
         const { date, stocks } = JSON.parse(raw);
-        if (date === todayKey() && Array.isArray(stocks) && stocks.length > 0) {
-            console.log('Top Stocks: serving from daily cache');
-            return stocks;
-        }
+        if (date === todayKey() && Array.isArray(stocks) && stocks.length > 0) return stocks;
     } catch (_) { /* ignore parse errors */ }
     return null;
 }
@@ -110,11 +107,8 @@ export async function getTopStocks({ forceRefresh = false } = {}) {
     try {
         const response = await fetch(`${API_BASE}/topstocks`);
 
-        // Check if response is HTML (error from Vite - API not running)
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
-            console.log('API not available, using mock data');
-            await new Promise(resolve => setTimeout(resolve, 800));
             return topStocksMockData;
         }
 
@@ -124,30 +118,20 @@ export async function getTopStocks({ forceRefresh = false } = {}) {
             throw new Error(data.error || 'Failed to fetch top stocks');
         }
 
-        // Cache and return live results
         if (data.stocks && data.stocks.length > 0) {
             writeCache(data.stocks);
             return data.stocks;
         }
 
-        // Fallback to mock data if no stocks returned
-        console.log('No stocks returned from API, using mock data');
         return topStocksMockData;
     } catch (error) {
-        console.error('API Error:', error);
-        // Before using mock data, try to return a stale cache (any day) as a better fallback
         try {
             const raw = localStorage.getItem(CACHE_KEY);
             if (raw) {
                 const { stocks } = JSON.parse(raw);
-                if (Array.isArray(stocks) && stocks.length > 0) {
-                    console.log('Top Stocks: API failed, serving stale cache');
-                    return stocks;
-                }
+                if (Array.isArray(stocks) && stocks.length > 0) return stocks;
             }
         } catch (_) { /* ignore */ }
-        console.log('Falling back to mock data');
-        await new Promise(resolve => setTimeout(resolve, 500));
         return topStocksMockData;
     }
 }

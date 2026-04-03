@@ -2,8 +2,6 @@
 Stock Analysis API Endpoint - All-in-one for Vercel Serverless
 Uses Yahoo Finance chart API for prices + Alpha Vantage for fundamentals
 """
-import os
-from dotenv import load_dotenv
 from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import urlparse, parse_qs
@@ -12,13 +10,11 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-
-load_dotenv()
+from utils.scoring import compute_fundamentals_score, compute_momentum_score, compute_quality_score, quality_score_to_label
 
 # API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
-ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
+YF_SUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -140,51 +136,38 @@ def get_quote(symbol):
         return {"error": f"Failed to fetch quote: {str(e)}"}
 
 def get_company_overview(symbol):
-    """Fetch company fundamentals using Alpha Vantage (limited but works)."""
+    """Fetch company fundamentals using Yahoo Finance quoteSummary (no auth required)."""
     try:
-        params = {
-            "function": "OVERVIEW",
-            "symbol": symbol,
-            "apikey": ALPHA_VANTAGE_KEY
-        }
-        response = requests.get(ALPHA_VANTAGE_URL, params=params, timeout=15)
+        url = YF_SUMMARY_URL.format(symbol=symbol)
+        params = {"modules": "defaultKeyStatistics,financialData,summaryDetail,assetProfile"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         data = response.json()
-        
-        # Check for rate limit or error
-        if "Note" in data or "Information" in data:
-            # Rate limited - return partial data
-            return {
-                "symbol": symbol,
-                "name": symbol,
-                "sector": None,
-                "pe_ratio": None,
-                "eps": None,
-                "roe": None,
-                "market_cap": None,
-                "dividend_yield": None,
-                "52_week_high": None,
-                "52_week_low": None,
-                "rate_limited": True
-            }
-        
-        if not data or "Symbol" not in data:
+
+        result = safe_get(data, "quoteSummary", "result")
+        if not result or len(result) == 0:
             return {"error": "Company data not found", "symbol": symbol, "name": symbol}
-        
+
+        r = result[0]
+        ks = r.get("defaultKeyStatistics", {})
+        fd = r.get("financialData", {})
+        sd = r.get("summaryDetail", {})
+        ap = r.get("assetProfile", {})
+
         return {
             "symbol": symbol,
-            "name": data.get("Name", symbol),
-            "sector": data.get("Sector"),
-            "industry": data.get("Industry"),
-            "pe_ratio": safe_float(data.get("PERatio")),
-            "forward_pe": safe_float(data.get("ForwardPE")),
-            "eps": safe_float(data.get("EPS")),
-            "roe": safe_float(data.get("ReturnOnEquityTTM")),
-            "market_cap": safe_float(data.get("MarketCapitalization")),
-            "dividend_yield": safe_float(data.get("DividendYield")),
-            "52_week_high": safe_float(data.get("52WeekHigh")),
-            "52_week_low": safe_float(data.get("52WeekLow")),
-            "beta": safe_float(data.get("Beta")),
-            "profit_margin": safe_float(data.get("ProfitMargin")),
+            "name": symbol,
+            "sector": ap.get("sector"),
+            "industry": ap.get("industry"),
+            "pe_ratio": safe_float(ks.get("trailingPE")),
+            "forward_pe": safe_float(ks.get("forwardPE")),
+            "eps": safe_float(ks.get("trailingEps")),
+            "roe": safe_float(fd.get("returnOnEquity")),
+            "market_cap": safe_float(sd.get("marketCap")),
+            "dividend_yield": safe_float(sd.get("dividendYield")),
+            "52_week_high": safe_float(sd.get("fiftyTwoWeekHigh")),
+            "52_week_low": safe_float(sd.get("fiftyTwoWeekLow")),
+            "beta": safe_float(ks.get("beta")),
+            "profit_margin": safe_float(fd.get("profitMargins")),
         }
     except Exception as e:
         return {"error": f"Failed to fetch company data: {str(e)}", "symbol": symbol, "name": symbol}
@@ -437,95 +420,6 @@ def train_and_predict(price_data, fundamentals=None):
     }
 
 
-# ============ QUALITY SCORING (same 4-pillar system as topstocks.py) ============
-
-def compute_fundamentals_score(fund):
-    """Score company quality from fundamentals, 0-100. Higher is better."""
-    if not fund or fund.get("rate_limited") or "error" in fund:
-        return None  # Unavailable — weight will be redistributed
-
-    score = 50.0
-
-    pe = fund.get("pe_ratio")
-    if pe is not None:
-        if pe <= 0:    score -= 10
-        elif pe < 15:  score += 20
-        elif pe < 25:  score += 10
-        elif pe < 35:  score += 0
-        else:          score -= 15
-
-    roe = fund.get("roe")
-    if roe is not None:
-        if roe > 0.25:   score += 20
-        elif roe > 0.15: score += 12
-        elif roe > 0.08: score += 5
-        elif roe < 0:    score -= 15
-
-    pm = fund.get("profit_margin")
-    if pm is not None:
-        if pm > 0.20:   score += 10
-        elif pm > 0.10: score += 5
-        elif pm < 0:    score -= 10
-
-    if fund.get("eps", 0) and fund["eps"] > 0:
-        score += 5  # Positive EPS bonus
-
-    return max(0.0, min(100.0, score))
-
-
-def compute_momentum_score(price_data):
-    """Short-term momentum score 0-100 based on recent price action."""
-    if not price_data or len(price_data) < 20:
-        return 50.0
-
-    closes = [p["close"] for p in price_data]  # newest first
-    current = closes[0]
-    sma5  = np.mean(closes[:5])
-    sma20 = np.mean(closes[:20])
-
-    score = 50.0
-
-    # Price position relative to SMA20
-    if current > sma20:
-        score += min(20, (current - sma20) / sma20 * 100 * 2)
-    else:
-        score -= min(20, (sma20 - current) / sma20 * 100 * 2)
-
-    # Short-term momentum crossover
-    score += 15 if sma5 > sma20 else -10
-
-    # Recent daily change
-    if len(closes) >= 2:
-        daily_pct = (closes[0] - closes[1]) / closes[1] * 100
-        if daily_pct > 1.5:     score += 10
-        elif daily_pct > 0:     score += 5
-        elif daily_pct < -1.5:  score -= 10
-        elif daily_pct < 0:     score -= 5
-
-    return max(0.0, min(100.0, score))
-
-
-def compute_quality_score(ml_confidence, fund_score, momentum_score):
-    """
-    Composite quality score: fundamentals 40% + ML confidence 40% + momentum 20%.
-    If fundamentals are unavailable (rate-limited / no data), redistributes
-    that weight to ML (65%) + momentum (35%).
-    """
-    if fund_score is None:
-        return round(ml_confidence * 0.65 + momentum_score * 0.35, 1)
-    return round(ml_confidence * 0.40 + fund_score * 0.40 + momentum_score * 0.20, 1)
-
-
-def quality_score_to_label(score, direction):
-    """Convert a quality_score to a human-readable buy/sell label."""
-    if direction == "bullish":
-        if score >= 70:  return "Strong Buy"
-        if score >= 55:  return "Moderate Buy"
-        return "Weak Buy"
-    else:
-        if score >= 70:  return "Strong Sell"
-        if score >= 55:  return "Moderate Sell"
-        return "Weak Sell"
 
 # ============ API HANDLER ============
 class handler(BaseHTTPRequestHandler):
@@ -557,8 +451,9 @@ class handler(BaseHTTPRequestHandler):
             prediction = train_and_predict(prices["prices"], fundamentals)
 
             # ── 4-Pillar composite quality score ──
-            fund_score     = compute_fundamentals_score(fundamentals)   # pillar 2
-            momentum_score = compute_momentum_score(prices["prices"])   # pillar 1 (price action)
+            fund_score     = compute_fundamentals_score(fundamentals)
+            closes         = [p["close"] for p in prices["prices"]]
+            momentum_score = compute_momentum_score(closes)
             # pillar 3 = ML confidence, pillar 4 = chart data (display only)
             quality_score  = compute_quality_score(
                 prediction["confidence"], fund_score, momentum_score

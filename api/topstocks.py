@@ -5,20 +5,16 @@ Ranks by composite quality score: fundamentals (40%) + ML (40%) + momentum (20%)
 """
 from http.server import BaseHTTPRequestHandler
 import json
-import os
 import requests
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dotenv import load_dotenv
-
-load_dotenv()
+from utils.scoring import compute_fundamentals_score, compute_momentum_score, compute_quality_score
 
 # API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
-ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
+YF_SUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -135,35 +131,31 @@ def get_stock_data(symbol, sector):
 
 
 def get_fundamentals(symbol):
-    """
-    Fetch company fundamentals via Alpha Vantage OVERVIEW endpoint.
-    Returns partial data with rate_limited=True if the API limit is hit.
-    """
+    """Fetch company fundamentals via Yahoo Finance quoteSummary (no auth required)."""
     try:
-        params = {
-            "function": "OVERVIEW",
-            "symbol": symbol,
-            "apikey": ALPHA_VANTAGE_KEY,
-        }
-        response = requests.get(ALPHA_VANTAGE_URL, params=params, timeout=10)
+        url = YF_SUMMARY_URL.format(symbol=symbol)
+        params = {"modules": "defaultKeyStatistics,financialData,summaryDetail"}
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
         data = response.json()
 
-        # Rate limited or quota exceeded
-        if "Note" in data or "Information" in data:
-            return {"rate_limited": True}
-
-        if not data or "Symbol" not in data:
+        result = safe_get(data, "quoteSummary", "result")
+        if not result or len(result) == 0:
             return {}
 
+        r = result[0]
+        ks = r.get("defaultKeyStatistics", {})
+        fd = r.get("financialData", {})
+        sd = r.get("summaryDetail", {})
+
         return {
-            "pe_ratio": safe_float(data.get("PERatio")),
-            "forward_pe": safe_float(data.get("ForwardPE")),
-            "eps": safe_float(data.get("EPS")),
-            "roe": safe_float(data.get("ReturnOnEquityTTM")),
-            "profit_margin": safe_float(data.get("ProfitMargin")),
-            "market_cap": safe_float(data.get("MarketCapitalization")),
-            "beta": safe_float(data.get("Beta")),
-            "dividend_yield": safe_float(data.get("DividendYield")),
+            "pe_ratio": safe_float(ks.get("trailingPE")),
+            "forward_pe": safe_float(ks.get("forwardPE")),
+            "eps": safe_float(ks.get("trailingEps")),
+            "roe": safe_float(fd.get("returnOnEquity")),
+            "profit_margin": safe_float(fd.get("profitMargins")),
+            "market_cap": safe_float(sd.get("marketCap")),
+            "beta": safe_float(ks.get("beta")),
+            "dividend_yield": safe_float(sd.get("dividendYield")),
         }
     except Exception as e:
         print(f"Fundamentals error for {symbol}: {e}")
@@ -171,124 +163,6 @@ def get_fundamentals(symbol):
 
 
 # ============ SCORING ============
-
-def compute_fundamentals_score(fund):
-    """
-    Score company quality from fundamentals, 0-100.
-    Higher is better.
-    """
-    if not fund or fund.get("rate_limited"):
-        return None  # Unknown — will be excluded from fundamentals weighting
-
-    score = 50.0  # Start at neutral
-
-    pe = fund.get("pe_ratio")
-    if pe is not None:
-        if pe <= 0:
-            score -= 10  # Negative earnings
-        elif pe < 15:
-            score += 20  # Cheap
-        elif pe < 25:
-            score += 10  # Reasonable
-        elif pe < 35:
-            score += 0   # Pricey but not extreme
-        else:
-            score -= 15  # Expensive
-
-    roe = fund.get("roe")
-    if roe is not None:
-        if roe > 0.25:
-            score += 20  # Exceptional ROE
-        elif roe > 0.15:
-            score += 12  # Good ROE
-        elif roe > 0.08:
-            score += 5   # Decent ROE
-        elif roe < 0:
-            score -= 15  # Negative ROE
-
-    pm = fund.get("profit_margin")
-    if pm is not None:
-        if pm > 0.20:
-            score += 10
-        elif pm > 0.10:
-            score += 5
-        elif pm < 0:
-            score -= 10
-
-    eps = fund.get("eps")
-    if eps is not None and eps > 0:
-        score += 5  # Positive EPS bonus
-
-    return max(0.0, min(100.0, score))
-
-
-def compute_momentum_score(stock_data):
-    """
-    Short-term momentum score 0-100 based on price action.
-    Uses recent change and 5-day vs 20-day SMA position.
-    """
-    prices = stock_data.get("prices", [])
-    if len(prices) < 20:
-        return 50.0  # Unknown
-
-    closes = [p["close"] for p in prices]
-    current = closes[0]
-
-    sma5 = np.mean(closes[:5])
-    sma20 = np.mean(closes[:20])
-
-    score = 50.0
-
-    # Price vs SMA20
-    if current > sma20:
-        pct_above = (current - sma20) / sma20 * 100
-        score += min(20, pct_above * 2)
-    else:
-        pct_below = (sma20 - current) / sma20 * 100
-        score -= min(20, pct_below * 2)
-
-    # SMA5 vs SMA20 crossover
-    if sma5 > sma20:
-        score += 15
-    else:
-        score -= 10
-
-    # Recent daily change
-    try:
-        daily_change = float(stock_data["change_percent"])
-        if daily_change > 1.5:
-            score += 10
-        elif daily_change > 0:
-            score += 5
-        elif daily_change < -1.5:
-            score -= 10
-        elif daily_change < 0:
-            score -= 5
-    except (ValueError, TypeError):
-        pass
-
-    return max(0.0, min(100.0, score))
-
-
-def compute_quality_score(ml_confidence, fund_score, momentum_score):
-    """
-    Composite quality score:
-      - ML confidence:    40%
-      - Fundamentals:     40% (or redistributed to ML+momentum if unavailable)
-      - Momentum:         20%
-    """
-    if fund_score is None:
-        # Fundamentals unavailable — redistribute their weight
-        ml_weight = 0.65
-        mom_weight = 0.35
-        return round(ml_confidence * ml_weight + momentum_score * mom_weight, 1)
-    else:
-        return round(
-            ml_confidence * 0.40 +
-            fund_score * 0.40 +
-            momentum_score * 0.20,
-            1
-        )
 
 
 # ============ ML PREDICTION ============
@@ -371,7 +245,7 @@ def predict_stock(stock_data, fundamentals=None):
             reasons.append("Recent weakness observed")
 
     # Add fundamentals note
-    if fundamentals and not fundamentals.get("rate_limited"):
+    if fundamentals:
         pe, roe = fundamentals.get("pe_ratio"), fundamentals.get("roe")
         if pe and roe and pe < 20 and roe > 0.10:
             reasons.append("fundamentals appear strong")
@@ -390,15 +264,6 @@ def predict_stock(stock_data, fundamentals=None):
 
 
 # ============ API HANDLER ============
-
-def _score_stock(stock_info):
-    """Fetch, score, and return a single stock entry. Designed for thread pool use."""
-    symbol = stock_info["symbol"]
-    sector = stock_info["sector"]
-    stock_data = get_stock_data(symbol, sector)
-    if not stock_data:
-        return None
-    return {"stock_data": stock_data, "symbol": symbol}
 
 
 class handler(BaseHTTPRequestHandler):
@@ -420,11 +285,10 @@ class handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
 
-            # ── Step 2: Fetch all fundamentals in parallel (capped at 5 to
-            #            respect Alpha Vantage's 5 req/min free-tier limit) ──
+            # ── Step 2: Fetch all fundamentals in parallel ──
             symbols_with_data = list(price_results.keys())
             fund_results = {}  # symbol -> fundamentals dict
-            with ThreadPoolExecutor(max_workers=5) as ex:
+            with ThreadPoolExecutor(max_workers=len(symbols_with_data)) as ex:
                 future_to_sym = {
                     ex.submit(get_fundamentals, sym): sym
                     for sym in symbols_with_data
@@ -446,7 +310,7 @@ class handler(BaseHTTPRequestHandler):
                     continue
 
                 fund_score = compute_fundamentals_score(fund)
-                momentum_score = compute_momentum_score(stock_data)
+                momentum_score = compute_momentum_score([p["close"] for p in stock_data["prices"]])
                 quality_score = compute_quality_score(
                     prediction["confidence"], fund_score, momentum_score
                 )
@@ -469,7 +333,6 @@ class handler(BaseHTTPRequestHandler):
                         "roe": fund.get("roe"),
                         "profit_margin": fund.get("profit_margin"),
                         "market_cap": fund.get("market_cap"),
-                        "rate_limited": fund.get("rate_limited", False),
                     } if fund else None,
                 })
 

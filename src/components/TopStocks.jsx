@@ -8,7 +8,6 @@ function TopStocks({ onStockSelect }) {
     const [stocks, setStocks] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
-    const [isCached, setIsCached] = useState(false)
 
     useEffect(() => {
         loadTopStocks()
@@ -18,21 +17,8 @@ function TopStocks({ onStockSelect }) {
         setLoading(true)
         setError(null)
         try {
-            // Check if we have a cache entry before fetching
-            const cacheRaw = localStorage.getItem('topstocks_cache')
-            const cacheValid = (() => {
-                try {
-                    if (!cacheRaw || forceRefresh) return false
-                    const { date } = JSON.parse(cacheRaw)
-                    const today = new Date()
-                    const key = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-                    return date === key
-                } catch { return false }
-            })()
-
             const data = await getTopStocks({ forceRefresh })
             setStocks(data)
-            setIsCached(cacheValid)
         } catch (err) {
             setError(err.message)
         } finally {
@@ -73,13 +59,9 @@ function TopStocks({ onStockSelect }) {
                 <h2>Top 5 Buy-Rated Stocks</h2>
                 <p>Ranked by quality score: fundamentals · AI signal · momentum</p>
                 <div className="refresh-row">
-                    {isCached && (
-                        <span className="cached-badge">📅 Cached today</span>
-                    )}
                     <button
                         className="refresh-btn"
                         onClick={() => loadTopStocks(true)}
-                        title="Force refresh (uses Alpha Vantage quota)"
                     >
                         🔄 Refresh
                     </button>
@@ -149,7 +131,7 @@ function TopStocks({ onStockSelect }) {
                             </div>
 
                             {/* Fundamentals row */}
-                            {stock.fundamentals && !stock.fundamentals.rate_limited && (
+                            {stock.fundamentals && (
                                 <div className="fundamentals-mini">
                                     {stock.fundamentals.pe_ratio != null && (
                                         <span className="fund-chip">P/E {stock.fundamentals.pe_ratio.toFixed(1)}</span>
@@ -174,7 +156,7 @@ function TopStocks({ onStockSelect }) {
             </div>
 
             <div className="demo-notice">
-                <span>Prices via Yahoo Finance · Fundamentals via Alpha Vantage</span>
+                <span>Prices &amp; Fundamentals via Yahoo Finance</span>
             </div>
         </div>
     )

@@ -1,25 +1,13 @@
 import { useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ComposedChart } from 'recharts'
-import { analyzeStock, mockData } from './services/api'
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart } from 'recharts'
+import { analyzeStock } from './services/api'
 import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
 import Login from './components/Login'
 import './App.css'
 
-function App() {
-  const [symbol, setSymbol] = useState('')
-  const [flippedCards, setFlippedCards] = useState(new Set())
-
-  const toggleFlip = (cardId) => {
-    setFlippedCards(prev => {
-      const next = new Set(prev)
-      next.has(cardId) ? next.delete(cardId) : next.add(cardId)
-      return next
-    })
-  }
-
-  const indicatorDefs = {
+const indicatorDefs = {
     rsi: {
       icon: '📉',
       title: 'RSI — Relative Strength Index',
@@ -40,7 +28,11 @@ function App() {
       title: 'Bollinger Bands',
       desc: 'Two bands plotted around a 20-day moving average. When price touches the upper band, it may be overextended. Near the lower band, it may be undervalued. A squeeze (bands narrowing) often signals a big move ahead.',
     },
-  }
+}
+
+function App() {
+  const [symbol, setSymbol] = useState('')
+  const [flippedCards, setFlippedCards] = useState(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)

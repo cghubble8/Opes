@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AreaChart, Area, ResponsiveContainer, LineChart, Line } from 'recharts'
+import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import { getPortfolio } from '../services/portfolio'
 import CandlestickLoader from './CandlestickLoader'
 

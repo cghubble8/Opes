@@ -1,0 +1,118 @@
+MODEL ACCURACY IMPROVEMENTS
+============================
+
+ROOT CAUSE DIAGNOSIS
+--------------------
+
+1. All 18 ML features are momentum-based
+
+In train_and_predict / predict_stock, every feature built per training row is:
+- 5-day lookback returns (ret) — pure momentum
+- Volume changes (vol) — momentum confirmation
+- High-low ratio (hl) — volatility/momentum
+- Price position within 5-day range — momentum
+- RSI-style calculation — momentum
+- SMA10 > SMA20 crossover — momentum
+
+The model has no way to flag "this trend is exhausted" because it has no
+mean-reversion features at all. It learns "up recently → predict up" and
+"down recently → predict down."
+
+2. Only 3 months of training data → ~50 samples
+
+With 3mo data (~63 days), minus the 5-day lookback and 5-day forward label
+window, you get roughly 53 training rows. A 100-tree Random Forest with 18
+features on 53 samples will overfit badly — the model_accuracy on training
+data likely shows 80-90%, but that's just it memorizing the recent trend.
+
+3. When fundamentals are rate-limited, it becomes 100% momentum
+
+From compute_quality_score:
+    if fund_score is None:
+        return round(ml_confidence * 0.65 + momentum_score * 0.35, 1)
+
+The ML model is trained on momentum features, and momentum_score is also
+explicitly momentum. Alpha Vantage's free tier hits rate limits constantly
+on /api/topstocks (18 stocks), so this fallback triggers frequently.
+
+4. The momentum score directly rewards trending stocks
+
+compute_momentum_score gives +15 for SMA5 > SMA20 and up to +20 for price
+above SMA20. A stock that's up 20% in 3 months gets near-maximum score with
+no penalty for being overextended.
+
+5. Fundamentals scoring ignores sector and growth
+
+A PE of 40 gets -15 — which unfairly hammers growth stocks like NVDA or AMZN.
+There's no PEG ratio (PE relative to earnings growth), no sector-relative
+benchmark, and no revenue growth consideration. This means fundamentals often
+reduce the score for the best growth companies.
+
+
+WHAT TO CHANGE
+--------------
+
+HIGH IMPACT
+
+A. Extend price data from 3mo → 1yr
+   Fetch range=1y instead of 3mo. This gives ~250 trading days → ~230 training
+   samples. Better generalization, less overfitting to the current trend.
+
+B. Add mean-reversion and exhaustion features to the ML model
+   - Bollinger Band %B (where price sits within the bands, 0-1): >0.9 signals
+     overextension
+   - Distance from 52-week high (% below peak): stocks near all-time highs
+     have less upside
+   - RSI normalized (not binary, the actual 0-100 value / 100): lets the model
+     learn the RSI-continuation vs RSI-reversal pattern from data
+   - Rate-of-change deceleration: if the 5-day return is positive but smaller
+     than the 20-day return, momentum is fading
+
+   These give the model a chance to learn "stock is up 25% but RSI is 80 and
+   at the upper band → likely reversal."
+
+C. Add a valuation penalty for price extension
+   In compute_momentum_score, add counter-pressure: if the stock is more than
+   2 standard deviations above SMA20 (outside Bollinger upper band), reduce
+   the score instead of continuing to add to it. Right now a stock above SMA20
+   gets rewarded unconditionally.
+
+MEDIUM IMPACT
+
+D. Add PEG-style normalization to fundamentals scoring
+   Instead of raw PE thresholds, compare PE to an implied growth rate. Alpha
+   Vantage returns EPS and you could use year-over-year EPS change as a proxy
+   for growth. A PE of 35 with 40% earnings growth is cheap; a PE of 20 with
+   -5% growth is expensive. Without this, the score systematically penalizes
+   the fastest-growing stocks.
+
+E. Sector-relative PE benchmark
+   Rather than absolute PE cutoffs, score PE relative to sector medians
+   (e.g., tech average ~28, financials ~14). A hardcoded lookup per sector
+   would be sufficient.
+
+F. Change the ML label from binary 5-day to risk-adjusted
+   Currently: 1 if fut_ret > 0 else 0. A +0.01% move and a +5% move both
+   label as 1. Consider using 1 if fut_ret > 0.5% else 0 (require a meaningful
+   move) to reduce noise labels.
+
+LOWER IMPACT / POLISH
+
+G. Train/test split instead of training on everything then predicting last point
+   Currently X_train = features[:-1], X_pred = features[-1:]. The model never
+   validates on holdout data. Adding a simple walk-forward validation (train on
+   first 80%, score on last 20%) would give a more honest confidence estimate.
+
+H. Add a "neutral" output band
+   If the RF probability is 0.45-0.55 (too close to call), return
+   "Neutral / Hold" instead of forcing a weak buy or weak sell. Right now every
+   stock gets a directional signal even when the model is essentially guessing.
+
+
+PRIORITY ORDER TO IMPLEMENT
+----------------------------
+
+1. Extend to 1yr data (biggest improvement for the least effort)
+2. Add BB%B + 52-week-high distance + RSI as continuous features to ML
+3. Add overextension penalty to compute_momentum_score
+4. Add PEG normalization and neutral band output
