@@ -2,6 +2,10 @@
 Stock Analysis API Endpoint - All-in-one for Vercel Serverless
 Uses Yahoo Finance chart API for prices + Alpha Vantage for fundamentals
 """
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from http.server import BaseHTTPRequestHandler
 import json
 from urllib.parse import urlparse, parse_qs

@@ -3,6 +3,10 @@ Top Stocks API Endpoint - Fetches and ranks top buy-rated stocks
 Uses Yahoo Finance chart API for prices + Alpha Vantage for fundamentals
 Ranks by composite quality score: fundamentals (40%) + ML (40%) + momentum (20%)
 """
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from http.server import BaseHTTPRequestHandler
 import json
 import requests
