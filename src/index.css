@@ -116,7 +116,11 @@ button {
   font-family: inherit;
   cursor: pointer;
   border: none;
-  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
 }
 
 .btn-primary {
@@ -153,7 +157,6 @@ input {
   padding: var(--spacing-md) var(--spacing-lg);
   color: var(--text-primary);
   transition: all var(--transition-normal);
-  outline: none;
 }
 
 input:focus {

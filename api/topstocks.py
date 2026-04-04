@@ -14,7 +14,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from utils.scoring import compute_fundamentals_score, compute_momentum_score, compute_quality_score
+from utils.scoring import compute_fundamentals_score, compute_momentum_score, compute_quality_score, build_key_factors
 
 # API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -74,7 +74,7 @@ def get_stock_data(symbol, sector):
     """Fetch 3-month price + quote data from Yahoo Finance chart API."""
     try:
         url = YF_CHART_URL.format(symbol=symbol)
-        params = {"range": "3mo", "interval": "1d", "includePrePost": "false"}
+        params = {"range": "1y", "interval": "1d", "includePrePost": "false"}
         response = requests.get(url, params=params, headers=HEADERS, timeout=10)
         data = response.json()
 
@@ -160,6 +160,7 @@ def get_fundamentals(symbol):
             "market_cap": safe_float(sd.get("marketCap")),
             "beta": safe_float(ks.get("beta")),
             "dividend_yield": safe_float(sd.get("dividendYield")),
+            "earnings_growth": safe_float(fd.get("earningsGrowth")),
         }
     except Exception as e:
         print(f"Fundamentals error for {symbol}: {e}")
@@ -177,32 +178,36 @@ def predict_stock(stock_data, fundamentals=None):
     if len(prices) < 50:
         return {"prediction": "Insufficient Data", "confidence": 0, "direction": "neutral", "reasoning": "Need more data"}
 
-    price_list = list(reversed(prices))
+    price_list = list(reversed(prices))  # chronological order
     features, labels = [], []
     lookback = 5
 
     for i in range(lookback, len(price_list) - 5):
         row = []
+
+        # 5-day lookback: daily return, volume change, high-low range
         for j in range(lookback):
             idx = i - j
             if idx > 0:
                 ret = (price_list[idx]["close"] - price_list[idx-1]["close"]) / price_list[idx-1]["close"]
                 vol = (price_list[idx]["volume"] - price_list[idx-1]["volume"]) / max(price_list[idx-1]["volume"], 1)
-                hl = (price_list[idx]["high"] - price_list[idx]["low"]) / price_list[idx]["close"]
+                hl  = (price_list[idx]["high"] - price_list[idx]["low"]) / price_list[idx]["close"]
                 row.extend([ret, vol, hl])
 
-        hi = max(p["high"] for p in price_list[i-lookback:i+1])
-        lo = min(p["low"] for p in price_list[i-lookback:i+1])
-        pos = (price_list[i]["close"] - lo) / (hi - lo) if hi != lo else 0.5
-        row.append(pos)
+        # Price position within 5-day range
+        hi  = max(p["high"] for p in price_list[i-lookback:i+1])
+        lo  = min(p["low"]  for p in price_list[i-lookback:i+1])
+        row.append((price_list[i]["close"] - lo) / (hi - lo) if hi != lo else 0.5)
 
+        # Normalized RSI proxy (0-1)
         gains, losses = [], []
         for j in range(1, min(15, i + 1)):
             chg = price_list[i-j+1]["close"] - price_list[i-j]["close"]
             (gains if chg > 0 else losses).append(abs(chg))
         rs = (np.mean(gains) if gains else 0) / (np.mean(losses) if losses else 0.001)
-        row.append((100 - 100/(1+rs)) / 100)
+        row.append((100 - 100 / (1 + rs)) / 100)
 
+        # SMA crossover signal
         if i >= 20:
             sma10 = np.mean([p["close"] for p in price_list[i-9:i+1]])
             sma20 = np.mean([p["close"] for p in price_list[i-19:i+1]])
@@ -210,9 +215,34 @@ def predict_stock(stock_data, fundamentals=None):
         else:
             row.append(0.5)
 
+        # Bollinger Band %B
+        if i >= 20:
+            window = [p["close"] for p in price_list[i-19:i+1]]
+            bb_sma, bb_std = np.mean(window), np.std(window)
+            if bb_std > 0:
+                bb_pct = (price_list[i]["close"] - (bb_sma - 2*bb_std)) / (4*bb_std)
+                row.append(max(0.0, min(1.0, bb_pct)))
+            else:
+                row.append(0.5)
+        else:
+            row.append(0.5)
+
+        # Distance from 52-week high
+        window_52w = price_list[max(0, i-251):i+1]
+        high_52w   = max(p["high"] for p in window_52w)
+        row.append((high_52w - price_list[i]["close"]) / high_52w if high_52w > 0 else 0)
+
+        # Rate-of-change deceleration: 5d return vs 20d run rate
+        if i >= 20:
+            ret_5d  = (price_list[i]["close"] - price_list[i-5]["close"])  / price_list[i-5]["close"]
+            ret_20d = (price_list[i]["close"] - price_list[i-20]["close"]) / price_list[i-20]["close"]
+            row.append(ret_5d - ret_20d / 4)
+        else:
+            row.append(0)
+
         features.append(row)
         fut_ret = (price_list[i+5]["close"] - price_list[i]["close"]) / price_list[i]["close"]
-        labels.append(1 if fut_ret > 0 else 0)
+        labels.append(1 if fut_ret > 0.005 else 0)
 
     if len(features) < 20:
         return {"prediction": "Insufficient Data", "confidence": 0, "direction": "neutral", "reasoning": "Not enough data"}
@@ -226,44 +256,61 @@ def predict_stock(stock_data, fundamentals=None):
     model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_split=5, random_state=42, class_weight='balanced')
     model.fit(X_train, y_train)
 
-    pred = model.predict(X_pred)[0]
+    pred  = model.predict(X_pred)[0]
     proba = model.predict_proba(X_pred)[0]
-    conf = max(proba)
+    conf  = max(proba)
 
-    if pred == 1:
+    # Neutral band: model too uncertain to call direction
+    if 0.45 <= conf <= 0.55:
+        direction = "neutral"
+        text = "Neutral / Hold"
+    elif pred == 1:
         direction = "bullish"
         text = "Strong Buy Signal" if conf > 0.7 else "Moderate Buy Signal" if conf > 0.55 else "Weak Buy Signal"
     else:
         direction = "bearish"
         text = "Strong Sell Signal" if conf > 0.7 else "Moderate Sell Signal" if conf > 0.55 else "Weak Sell Signal"
 
-    # Build reasoning
-    recent_change = (stock_data["prices"][0]["close"] - stock_data["prices"][4]["close"]) / stock_data["prices"][4]["close"] * 100
-    reasons = []
-    if direction == "bullish":
-        reasons.append("Positive momentum detected")
-        if recent_change > 2:
-            reasons.append("strong recent gains")
-    else:
-        if recent_change < -2:
-            reasons.append("Recent weakness observed")
+    # Derive signals from already-computed ML feature values for key factor explanations
+    price_list = list(reversed(prices))
+    closes_chron = [p["close"] for p in price_list]
+    sma5_val  = float(np.mean(closes_chron[-5:]))  if len(closes_chron) >= 5  else None
+    sma20_val = float(np.mean(closes_chron[-20:])) if len(closes_chron) >= 20 else None
 
-    # Add fundamentals note
-    if fundamentals:
-        pe, roe = fundamentals.get("pe_ratio"), fundamentals.get("roe")
-        if pe and roe and pe < 20 and roe > 0.10:
-            reasons.append("fundamentals appear strong")
-        elif pe and pe > 35:
-            reasons.append("note: high P/E ratio")
+    # RSI proxy (same calculation used for ML features)
+    gains, losses = [], []
+    for j in range(1, min(15, len(price_list))):
+        chg = price_list[-j]["close"] - price_list[-j-1]["close"]
+        (gains if chg > 0 else losses).append(abs(chg))
+    rs = (np.mean(gains) if gains else 0) / (np.mean(losses) if losses else 0.001)
+    rsi_approx = 100 - 100 / (1 + rs)
 
-    reasoning = ", ".join(reasons) if reasons else "Based on technical pattern analysis"
-    reasoning = reasoning[0].upper() + reasoning[1:] + "."
+    # Bollinger %B
+    bb_signal = "Within Bands"
+    if sma20_val is not None:
+        std20 = float(np.std(closes_chron[-20:]))
+        if std20 > 0:
+            upper = sma20_val + 2 * std20
+            lower = sma20_val - 2 * std20
+            if closes_chron[-1] > upper:
+                bb_signal = "Near Upper Band"
+            elif closes_chron[-1] < lower:
+                bb_signal = "Near Lower Band"
+
+    signals = {
+        "rsi": "Overbought" if rsi_approx > 65 else "Oversold" if rsi_approx < 35 else "Neutral",
+        "macd": "N/A",
+        "trend": "Uptrend" if (sma5_val and sma20_val and sma5_val > sma20_val) else "Downtrend",
+        "bollinger": bb_signal,
+    }
+    key_factors = build_key_factors(signals, fundamentals, {"rsi": rsi_approx}, direction)
 
     return {
         "prediction": text,
         "confidence": round(conf * 100, 1),
         "direction": direction,
-        "reasoning": reasoning,
+        "reasoning": key_factors["reasoning"],
+        "key_factors": {"bullish": key_factors["bullish"], "bearish": key_factors["bearish"]},
     }
 
 
@@ -330,6 +377,7 @@ class handler(BaseHTTPRequestHandler):
                     "confidence": prediction["confidence"],
                     "direction": prediction["direction"],
                     "reasoning": prediction["reasoning"],
+                    "key_factors": prediction.get("key_factors", {"bullish": [], "bearish": []}),
                     "quality_score": quality_score,
                     "fundamentals": {
                         "pe_ratio": fund.get("pe_ratio"),
@@ -370,6 +418,7 @@ class handler(BaseHTTPRequestHandler):
                         "confidence": prediction["confidence"],
                         "direction": prediction["direction"],
                         "reasoning": prediction["reasoning"],
+                        "key_factors": prediction.get("key_factors", {"bullish": [], "bearish": []}),
                         "quality_score": quality_score,
                         "fundamentals": {
                             "pe_ratio": fund.get("pe_ratio"),

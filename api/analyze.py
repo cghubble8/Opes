@@ -14,7 +14,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from utils.scoring import compute_fundamentals_score, compute_momentum_score, compute_quality_score, quality_score_to_label
+from utils.scoring import compute_fundamentals_score, compute_momentum_score, compute_quality_score, quality_score_to_label, build_key_factors
 
 # API Configuration
 YF_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -48,7 +48,7 @@ def safe_get(data, *keys, default=None):
     return result if result is not None else default
 
 # ============ STOCK DATA FUNCTIONS ============
-def get_daily_prices(symbol, range_period="3mo"):
+def get_daily_prices(symbol, range_period="1y"):
     """Fetch daily OHLCV data using Yahoo Finance chart API (no auth required)."""
     try:
         url = YF_CHART_URL.format(symbol=symbol)
@@ -172,6 +172,7 @@ def get_company_overview(symbol):
             "52_week_low": safe_float(sd.get("fiftyTwoWeekLow")),
             "beta": safe_float(ks.get("beta")),
             "profit_margin": safe_float(fd.get("profitMargins")),
+            "earnings_growth": safe_float(fd.get("earningsGrowth")),
         }
     except Exception as e:
         return {"error": f"Failed to fetch company data: {str(e)}", "symbol": symbol, "name": symbol}
@@ -346,80 +347,113 @@ def calculate_all_indicators(price_data):
 def train_and_predict(price_data, fundamentals=None):
     if len(price_data) < 50:
         return {"prediction": "Insufficient Data", "confidence": 0, "direction": "neutral", "reasoning": "Need 50+ days of data"}
-    
-    prices = list(reversed(price_data))
+
+    prices = list(reversed(price_data))  # chronological order
     features, labels = [], []
     lookback = 5
-    
+
     for i in range(lookback, len(prices) - 5):
         row = []
+
+        # 5-day lookback: daily return, volume change, high-low range
         for j in range(lookback):
             idx = i - j
             if idx > 0:
                 ret = (prices[idx]["close"] - prices[idx-1]["close"]) / prices[idx-1]["close"]
                 vol = (prices[idx]["volume"] - prices[idx-1]["volume"]) / max(prices[idx-1]["volume"], 1)
-                hl = (prices[idx]["high"] - prices[idx]["low"]) / prices[idx]["close"]
+                hl  = (prices[idx]["high"] - prices[idx]["low"]) / prices[idx]["close"]
                 row.extend([ret, vol, hl])
-        
-        hi = max(p["high"] for p in prices[i-lookback:i+1])
-        lo = min(p["low"] for p in prices[i-lookback:i+1])
-        pos = (prices[i]["close"] - lo) / (hi - lo) if hi != lo else 0.5
-        row.append(pos)
-        
+
+        # Price position within 5-day range
+        hi  = max(p["high"] for p in prices[i-lookback:i+1])
+        lo  = min(p["low"]  for p in prices[i-lookback:i+1])
+        row.append((prices[i]["close"] - lo) / (hi - lo) if hi != lo else 0.5)
+
+        # Normalized RSI proxy (0-1)
         gains, losses = [], []
         for j in range(1, min(15, i + 1)):
             chg = prices[i-j+1]["close"] - prices[i-j]["close"]
             (gains if chg > 0 else losses).append(abs(chg))
         rs = (np.mean(gains) if gains else 0) / (np.mean(losses) if losses else 0.001)
-        row.append((100 - 100/(1+rs)) / 100)
-        
+        row.append((100 - 100 / (1 + rs)) / 100)
+
+        # SMA crossover signal
         if i >= 20:
             sma10 = np.mean([p["close"] for p in prices[i-9:i+1]])
             sma20 = np.mean([p["close"] for p in prices[i-19:i+1]])
             row.append(1 if sma10 > sma20 else 0)
         else:
             row.append(0.5)
-        
+
+        # Bollinger Band %B — where price sits within the bands (0=lower, 1=upper)
+        if i >= 20:
+            window = [p["close"] for p in prices[i-19:i+1]]
+            bb_sma, bb_std = np.mean(window), np.std(window)
+            if bb_std > 0:
+                bb_pct = (prices[i]["close"] - (bb_sma - 2*bb_std)) / (4*bb_std)
+                row.append(max(0.0, min(1.0, bb_pct)))
+            else:
+                row.append(0.5)
+        else:
+            row.append(0.5)
+
+        # Distance from 52-week high (0=at high, higher=further below)
+        window_52w = prices[max(0, i-251):i+1]
+        high_52w   = max(p["high"] for p in window_52w)
+        row.append((high_52w - prices[i]["close"]) / high_52w if high_52w > 0 else 0)
+
+        # Rate-of-change deceleration: 5d return vs 20d run rate
+        if i >= 20:
+            ret_5d  = (prices[i]["close"] - prices[i-5]["close"])  / prices[i-5]["close"]
+            ret_20d = (prices[i]["close"] - prices[i-20]["close"]) / prices[i-20]["close"]
+            row.append(ret_5d - ret_20d / 4)
+        else:
+            row.append(0)
+
         features.append(row)
         fut_ret = (prices[i+5]["close"] - prices[i]["close"]) / prices[i]["close"]
-        labels.append(1 if fut_ret > 0 else 0)
-    
+        labels.append(1 if fut_ret > 0.005 else 0)  # require >0.5% gain to label bullish
+
     if len(features) < 20:
         return {"prediction": "Insufficient Data", "confidence": 0, "direction": "neutral", "reasoning": "Not enough training data"}
-    
+
     X_train, y_train = np.array(features[:-1]), np.array(labels[:-1])
     X_pred = np.array(features[-1:])
-    
+
     if np.sum(y_train) == 0 or np.sum(y_train) == len(y_train):
         return {"prediction": "Insufficient Variety", "confidence": 0, "direction": "neutral", "reasoning": "Data lacks variety"}
-    
+
     model = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_split=5, random_state=42, class_weight='balanced')
     model.fit(X_train, y_train)
-    
-    pred = model.predict(X_pred)[0]
+
+    pred  = model.predict(X_pred)[0]
     proba = model.predict_proba(X_pred)[0]
-    conf = max(proba)
-    
-    if pred == 1:
+    conf  = max(proba)
+
+    # Neutral band: model is too uncertain to call direction
+    if 0.45 <= conf <= 0.55:
+        direction = "neutral"
+        text = "Neutral / Hold"
+    elif pred == 1:
         direction = "bullish"
         text = "Strong Buy Signal" if conf > 0.7 else "Moderate Buy Signal" if conf > 0.55 else "Weak Buy Signal"
     else:
         direction = "bearish"
         text = "Strong Sell Signal" if conf > 0.7 else "Moderate Sell Signal" if conf > 0.55 else "Weak Sell Signal"
-    
+
     note = ""
     if fundamentals:
         pe, roe = fundamentals.get("pe_ratio"), fundamentals.get("roe")
         if pe and roe and pe < 20 and roe > 0.10:
             note = " Fundamentals appear strong."
-        elif pe and pe > 35:
+        elif pe and pe > 35 and not fundamentals.get("earnings_growth"):
             note = " High P/E may indicate overvaluation."
-    
+
     return {
         "prediction": text,
         "confidence": round(conf * 100, 1),
         "direction": direction,
-        "reasoning": f"Based on momentum, volume, and trend patterns.{note}",
+        "reasoning": f"Based on momentum, mean-reversion, and trend patterns.{note}",
         "model_accuracy": round(model.score(X_train, y_train) * 100, 1)
     }
 
@@ -464,6 +498,14 @@ class handler(BaseHTTPRequestHandler):
             )
             rating_label = quality_score_to_label(quality_score, prediction["direction"])
 
+            # ── Build data-driven explanation ──
+            key_factors = build_key_factors(
+                signals=indicators.get("signals", {}),
+                fundamentals=fundamentals,
+                indicators=indicators.get("indicators", {}),
+                direction=prediction["direction"]
+            )
+
             # Use name from price meta if fundamentals failed
             name = fundamentals.get("name") or prices.get("meta", {}).get("name") or symbol
 
@@ -485,9 +527,15 @@ class handler(BaseHTTPRequestHandler):
                     "52_week_low": fundamentals.get("52_week_low"),
                     "beta": fundamentals.get("beta"),
                     "profit_margin": fundamentals.get("profit_margin"),
+                    "earnings_growth": fundamentals.get("earnings_growth"),
                 },
                 "prediction": {
                     **prediction,
+                    "reasoning": key_factors["reasoning"],
+                    "key_factors": {
+                        "bullish": key_factors["bullish"],
+                        "bearish": key_factors["bearish"],
+                    },
                     "rating": rating_label,           # 4-pillar composite label
                     "quality_score": quality_score,   # 0-100 composite score
                     "fund_score": round(fund_score, 1) if fund_score is not None else None,

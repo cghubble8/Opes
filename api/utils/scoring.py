@@ -7,17 +7,29 @@ import numpy as np
 def compute_fundamentals_score(fund):
     """Score company quality from fundamentals, 0-100. Higher is better."""
     if not fund or "error" in fund:
-        return None  # Unavailable — weight will be redistributed
+        return None
 
     score = 50.0
 
     pe = fund.get("pe_ratio")
+    earnings_growth = fund.get("earnings_growth")  # e.g. 0.15 = 15% YoY growth
+
     if pe is not None:
-        if pe <= 0:    score -= 10
-        elif pe < 15:  score += 20
-        elif pe < 25:  score += 10
-        elif pe < 35:  score += 0
-        else:          score -= 15
+        if earnings_growth and earnings_growth > 0:
+            # PEG ratio: PE / (growth rate as a percentage)
+            peg = pe / (earnings_growth * 100)
+            if peg < 0.5:    score += 25  # Very cheap relative to growth
+            elif peg < 1.0:  score += 15  # Good value
+            elif peg < 1.5:  score += 5   # Fair
+            elif peg < 2.0:  score -= 5   # Somewhat expensive
+            else:            score -= 15  # Expensive relative to growth
+        else:
+            # Fallback to absolute PE when growth data unavailable
+            if pe <= 0:    score -= 10
+            elif pe < 15:  score += 20
+            elif pe < 25:  score += 10
+            elif pe < 35:  score += 0
+            else:          score -= 15
 
     roe = fund.get("roe")
     if roe is not None:
@@ -42,6 +54,7 @@ def compute_momentum_score(closes):
     """
     Short-term momentum score 0-100.
     closes: list of close prices, newest first.
+    Includes an overextension penalty when price is outside the Bollinger upper band.
     """
     if not closes or len(closes) < 20:
         return 50.0
@@ -49,6 +62,7 @@ def compute_momentum_score(closes):
     current = closes[0]
     sma5  = np.mean(closes[:5])
     sma20 = np.mean(closes[:20])
+    std20 = np.std(closes[:20])
 
     score = 50.0
 
@@ -58,6 +72,16 @@ def compute_momentum_score(closes):
         score -= min(20, (sma20 - current) / sma20 * 100 * 2)
 
     score += 15 if sma5 > sma20 else -10
+
+    # Overextension penalty: price above the Bollinger upper band (2 std)
+    if std20 > 0:
+        upper_band = sma20 + 2 * std20
+        lower_band = sma20 - 2 * std20
+        if current > upper_band:
+            overext = (current - upper_band) / std20
+            score -= min(15, overext * 5)
+        elif current < lower_band:
+            score += 5  # Contrarian: near lower band
 
     if len(closes) >= 2:
         daily_pct = (closes[0] - closes[1]) / closes[1] * 100
@@ -86,7 +110,98 @@ def quality_score_to_label(score, direction):
         if score >= 70:  return "Strong Buy"
         if score >= 55:  return "Moderate Buy"
         return "Weak Buy"
-    else:
+    elif direction == "bearish":
         if score >= 70:  return "Strong Sell"
         if score >= 55:  return "Moderate Sell"
         return "Weak Sell"
+    else:
+        return "Neutral / Hold"
+
+
+def build_key_factors(signals, fundamentals, indicators, direction):
+    """
+    Build human-readable explanations of WHY a rating was given.
+    Returns {"bullish": [...], "bearish": [...], "reasoning": str}
+    """
+    bullish = []
+    bearish = []
+
+    # ── Technical signals ──
+    rsi = indicators.get("rsi") if indicators else None
+    if rsi is not None:
+        if rsi < 35:
+            bullish.append(f"RSI at {rsi:.0f} — oversold, potential bounce opportunity")
+        elif rsi > 65:
+            bearish.append(f"RSI at {rsi:.0f} — overbought, pullback risk")
+
+    macd = indicators.get("macd") if indicators else None
+    macd_signal = indicators.get("macd_signal") if indicators else None
+    if macd is not None and macd_signal is not None:
+        if macd > macd_signal:
+            bullish.append("MACD above signal line — positive momentum crossover")
+        else:
+            bearish.append("MACD below signal line — weakening momentum")
+
+    trend = signals.get("trend", "") if signals else ""
+    if trend in ("Strong Uptrend", "Uptrend"):
+        bullish.append(f"Price in {trend.lower()} (above key moving averages)")
+    elif trend in ("Downtrend", "Strong Downtrend"):
+        bearish.append(f"Price in {trend.lower()} (below key moving averages)")
+
+    bollinger = signals.get("bollinger", "") if signals else ""
+    if bollinger == "Near Upper Band":
+        bearish.append("Price near Bollinger upper band — may be overextended")
+    elif bollinger == "Near Lower Band":
+        bullish.append("Price near Bollinger lower band — potential mean-reversion setup")
+
+    # ── Fundamental signals ──
+    fund = fundamentals or {}
+    pe = fund.get("pe_ratio")
+    earnings_growth = fund.get("earnings_growth")
+    roe = fund.get("roe")
+    pm = fund.get("profit_margin")
+
+    if pe is not None and pe > 0:
+        if earnings_growth and earnings_growth > 0:
+            peg = pe / (earnings_growth * 100)
+            if peg < 1.0:
+                bullish.append(f"PEG ratio of {peg:.2f} — undervalued relative to growth")
+            elif peg > 2.0:
+                bearish.append(f"PEG ratio of {peg:.2f} — expensive relative to earnings growth")
+        elif pe < 15:
+            bullish.append(f"Attractive valuation — P/E of {pe:.1f}")
+        elif pe > 35:
+            bearish.append(f"Elevated P/E of {pe:.1f} without strong earnings growth")
+
+    if roe is not None:
+        if roe > 0.20:
+            bullish.append(f"Strong ROE of {roe*100:.0f}% — efficient capital deployment")
+        elif roe < 0:
+            bearish.append("Negative ROE — company not generating returns on equity")
+
+    if pm is not None:
+        if pm > 0.15:
+            bullish.append(f"Healthy profit margin of {pm*100:.0f}%")
+        elif pm < 0:
+            bearish.append("Negative profit margins — profitability concern")
+
+    # ── Build reasoning string ──
+    parts = []
+    if bullish:
+        parts.append(bullish[0])
+    if len(bullish) > 1:
+        parts.append(bullish[1])
+    if bearish:
+        parts.append(f"note: {bearish[0].lower()}")
+
+    if parts:
+        reasoning = "; ".join(parts) + "."
+        reasoning = reasoning[0].upper() + reasoning[1:]
+    elif direction == "bullish":
+        reasoning = "Positive momentum and technical signals support a bullish outlook."
+    elif direction == "bearish":
+        reasoning = "Technical and fundamental signals suggest caution."
+    else:
+        reasoning = "Mixed signals — insufficient conviction for a directional call."
+
+    return {"bullish": bullish, "bearish": bearish, "reasoning": reasoning}

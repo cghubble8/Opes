@@ -2,21 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Instructions
+When creating a new function make a concise comment with what it does
 
-```bash
-# Frontend development
-npm run dev        # Start Vite dev server (hot reload)
-npm run build      # Production build to /dist
-npm run lint       # ESLint check
-npm run preview    # Preview production build locally
+Be critical do not default to agree with me. Try to give more ideas on what my be best for the project
 
-# No test suite configured
+# Python dependencies
+pip install -r requirements.txt
 ```
 
-Python dependencies: `pip install -r requirements.txt`
-
-Environment variable required: `ALPHA_VANTAGE_KEY` (Alpha Vantage free tier API key)
+See `Docs/start_dev_server.txt` for the dev setup.
 
 ## Architecture
 
@@ -30,8 +25,8 @@ Three views managed by `App.jsx`:
 - **Portfolio** — Mock holdings with sparklines; no backend, pure local data from `src/services/portfolio.js`
 
 Services (`src/services/`):
-- `api.js` — Calls `/api/analyze`, caches results in localStorage (daily expiry, cache version 2, stale-cache fallback)
-- `topStocks.js` — Calls `/api/topstocks`, same daily localStorage cache pattern
+- `api.js` — Calls `/api/analyze`, caches in localStorage (daily expiry, cache version 2, stale-cache fallback)
+- `topStocks.js` — Calls `/api/topstocks`, same daily localStorage cache pattern; falls back to `topStocksMockData` when API unavailable
 - `portfolio.js` — Pure mock data, no API calls
 
 ### Backend (`api/`)
@@ -39,37 +34,48 @@ Services (`src/services/`):
 Two Vercel Python serverless handlers:
 
 **`analyze.py` — `GET /api/analyze?symbol=X`**
-- Fetches in parallel (3 threads): Yahoo Finance 3mo prices, current quote, Alpha Vantage fundamentals
+- Fetches in parallel (3 threads): Yahoo Finance 1yr prices, current quote, Yahoo Finance quoteSummary fundamentals
 - Computes: SMA (20/50), EMA (12/26), RSI (14), MACD (12/26/9), Bollinger Bands (20), OBV
-- Trains a RandomForestClassifier (100 estimators, depth 5) on 5-day lookback features per request
+- Trains a RandomForestClassifier (100 estimators, depth 5) on ~230 training samples from 1yr of data
+- ML features: 5-day returns/volume/HL ratio, price position, RSI proxy, SMA crossover, Bollinger %B, 52-week high distance, ROC deceleration
+- Label threshold: >0.5% forward return (not just >0)
+- Neutral band: returns "Neutral / Hold" when model confidence is 0.45–0.55
 - Composite quality score: fundamentals 40% + ML confidence 40% + momentum 20%
 
 **`topstocks.py` — `GET /api/topstocks`**
 - Processes hardcoded `WATCHLIST` (18 large-cap stocks: NVDA, META, AMZN, AAPL, GOOGL, etc.)
-- Concurrent price fetch (uncapped threads), fundamentals fetch capped at 5 workers to respect Alpha Vantage's 5 req/min free tier limit
-- Uses the same 4-pillar scoring as `analyze.py`; returns top 5 bullish stocks, padded with non-bullish if fewer than 5
+- Concurrent price fetch (uncapped threads) + concurrent fundamentals fetch (uncapped — Yahoo Finance has no rate limit)
+- Same ML feature set and 4-pillar scoring as `analyze.py`
+- Returns top 5 bullish stocks by quality score; pads with non-bullish if fewer than 5
+- Neutral-direction stocks are excluded from top picks
 
-**`api/utils/`**
-- `technical.py` — All indicator math (SMA, EMA, RSI, MACD, Bollinger, OBV)
-- `stock_data.py` — Yahoo Finance HTTP client
-- `ml_model.py` — RandomForest training logic
+**`api/utils/scoring.py`** — shared scoring logic imported by both handlers:
+- `compute_fundamentals_score(fund)` — uses PEG ratio (PE / earnings growth%) when `earnings_growth` available; falls back to absolute PE thresholds
+- `compute_momentum_score(closes)` — includes overextension penalty when price exceeds Bollinger upper band
+- `compute_quality_score(ml_confidence, fund_score, momentum_score)`
+- `quality_score_to_label(score, direction)`
+
+**`api/dev_server.py`** — local development only; routes `/api/analyze` and `/api/topstocks` to the appropriate handler modules.
 
 ### Data Sources
 
 | Source | Auth | Usage |
 |--------|------|-------|
-| Yahoo Finance Chart API | None required | Prices, quotes, chart data |
-| Alpha Vantage | `ALPHA_VANTAGE_KEY` env var | PE ratio, ROE, EPS, sector, company overview |
+| Yahoo Finance Chart API (`/v8/finance/chart`) | None | Prices (1yr OHLCV), current quote |
+| Yahoo Finance quoteSummary (`/v10/finance/quoteSummary`) | None | PE, ROE, EPS, profit margin, earnings growth, sector, 52-week high/low, beta |
+
+All fundamentals now come from Yahoo Finance. Alpha Vantage is no longer used.
+
+### Local Dev Notes
+
+- Packages must be installed on Python 3.13 specifically (`py -3.13`); the project machine also has Python 3.14 which lacks the dependencies
+- `vercel dev` does not work with this project — use the two-terminal setup instead
+- Vite proxies `/api/*` to `http://localhost:8000` (configured in `vite.config.js`)
 
 ### Deployment
 
-`vercel.json` routes `/api/**/*.py` to Vercel's Python runtime; static frontend is served from `/dist`. The ML model is retrained on every backend request (no persistence).
+`vercel.json` routes `api/*.py` (top-level only, not `api/utils/`) to Vercel's Python runtime. Static frontend served from `/dist`. The ML model is retrained on every backend request — no persistence.
 
 ### Auth
 
-Login is demo-only — `Login.jsx` accepts any email/password and stores a local user object. There is no backend auth, no token validation, and no real security layer.
-
-### Instructions 
-
-Comments should be short and to the point. 
-Do not use '----------------example-----------' or '==========example=========' for comments.
+Login is demo-only — `Login.jsx` accepts any email/password and stores a local user object. There is no backend auth.

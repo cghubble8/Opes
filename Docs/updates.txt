@@ -1,0 +1,87 @@
+04/03/26 SESSION UPDATES
+===============
+
+1. DATA-DRIVEN RATING EXPLANATIONS
+-----------------------------------
+Added a new `build_key_factors()` function to `api/utils/scoring.py` that generates
+specific, data-backed explanations for buy/hold/sell ratings instead of the previous
+generic "Based on momentum, mean-reversion, and trend patterns." string.
+
+- api/utils/scoring.py: New `build_key_factors(signals, fundamentals, indicators, direction)`
+  function returns bullish factors, bearish factors, and a rich reasoning string based on
+  actual computed values (RSI level, MACD crossover, trend, Bollinger position, PE ratio,
+  PEG ratio, ROE, profit margin).
+
+- api/analyze.py: Calls `build_key_factors` and includes `key_factors` and improved
+  `reasoning` in the prediction response.
+
+- api/topstocks.py: Reconstructs RSI, trend, and Bollinger signals from ML feature data,
+  calls `build_key_factors`, and passes `key_factors` through to each stock response.
+
+- src/App.jsx: Added "Key Drivers" section in the 4-Pillar Rating card, rendering bullish
+  factors as green pills and bearish factors as red pills.
+
+- src/App.css: Added `.key-factors`, `.bullish-factor`, `.bearish-factor` styles with
+  colored left-border treatment.
+
+Example output:
+  ✅ RSI at 38 — oversold, potential bounce opportunity
+  ✅ MACD above signal line — positive momentum crossover
+  ✅ Strong ROE of 24% — efficient capital deployment
+  ⚠️ Price near Bollinger upper band — may be overextended
+
+
+2. UI MODERNIZATION
+--------------------
+Based on a comprehensive UI/UX critique, the following improvements were made:
+
+BUG FIX
+- src/App.jsx: Defined the missing `toggleFlip()` function. All 4 indicator flip cards
+  (RSI, MACD, Moving Averages, Bollinger Bands) were calling this function but it was
+  never defined, causing a ReferenceError that crashed the Analyze results view.
+  Also added `role="button"`, `tabIndex={0}`, and `onKeyDown` handlers to each flip
+  card wrapper for keyboard accessibility.
+
+ACCESSIBILITY
+- src/index.css: Replaced global `button { outline: none }` and `input { outline: none }`
+  with `:focus-visible { outline: 2px solid var(--accent-green); outline-offset: 2px; }`
+  so keyboard users get visible focus indicators.
+
+HEADER REDESIGN
+- src/App.jsx + src/App.css: Collapsed the 3-row centered header (logo+signout /
+  welcome text / nav tabs) into a single 56px sticky bar:
+    [📊 FinAssist]   [Analyze] [Top 5 Buys] [Portfolio]   [Username · Sign Out]
+  Added `position: sticky`, `backdrop-filter: blur(16px)`, and a bottom border.
+  Removed "Welcome back, {name}" row — name is now inline in the header.
+
+PREDICTION CARD
+- src/App.jsx + src/App.css: Changed prediction card from center-aligned to left-aligned
+  (`align-items: stretch; text-align: left`). Increased rating label font-weight to 800.
+  Removed the large decorative emoji (🚀/📉/➡️) — replaced with a subtle directional
+  card glow: green shadow for bullish ratings, red shadow for bearish.
+
+RSI GAUGE LABELS
+- src/App.jsx + src/App.css: Added threshold tick marks at the 30 and 70 positions on
+  the RSI gauge, with labels below: "Oversold (30) / Neutral / Overbought (70)".
+  The gauge is now readable without requiring prior RSI knowledge.
+
+INDIGO COLOR LEAKS (leftover from a previous theme)
+- src/App.css `.flip-card-back`: Changed indigo gradient/border to green-tinted
+  (rgba(0,200,5,0.08) background, rgba(0,200,5,0.15) border).
+- src/App.css `.flip-card-back-icon`: Changed indigo drop-shadow to green.
+- src/App.css `.fund-chip`: Changed indigo background/border to green
+  (rgba(0,200,5,0.08) / rgba(0,200,5,0.20)) with `var(--accent-green)` text.
+
+CONTRAST FIX
+- src/App.css `.stock-chip:hover`: Changed `color: white` to `color: #000`.
+  White on #00c805 green fails WCAG contrast (~3.2:1). Black on green passes (~8:1)
+  and matches `.nav-tab.active` which already used black text correctly.
+
+PORTFOLIO CHART
+- src/App.css `.portfolio-chart`: Fixed bleed margin from `--spacing-lg` (24px) to
+  `--spacing-xl` (32px) to match the parent `.portfolio-hero` padding, eliminating
+  the visible gap between card edge and chart edge.
+
+TOPSTOCKS RANK BADGES
+- src/components/TopStocks.jsx: Removed the redundant `#1`, `#2` rank number text
+  that duplicated the medal emoji (🥇🥈🥉4️⃣5️⃣). The emoji alone is sufficient.

@@ -77,7 +77,6 @@ function TopStocks({ onStockSelect }) {
                     >
                         <div className="rank-badge">
                             <span className="rank-emoji">{rankEmojis[index]}</span>
-                            <span className="rank-number">#{index + 1}</span>
                         </div>
 
                         <div className="stock-rank-info">

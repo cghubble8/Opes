@@ -99,6 +99,15 @@ function App() {
     })).reverse()
   }
 
+  // Toggle flip state for indicator cards
+  const toggleFlip = (key) => {
+    setFlippedCards(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
   // Show login page if not authenticated
   if (!user) {
     return <Login onLogin={handleLogin} />
@@ -108,38 +117,36 @@ function App() {
     <div className="app-container">
       {/* Header */}
       <header className="header">
-        <div className="header-top">
-          <h1>
-            <span className="header-icon">📊</span>
-            <span className="gradient-text">FinAssist</span>
-          </h1>
-          <button className="logout-btn" onClick={handleLogout}>
-            Sign Out
-          </button>
+        <div className="header-logo">
+          <span className="header-icon">📊</span>
+          <span className="gradient-text">FinAssist</span>
         </div>
-        <p>Welcome back, {user.name}</p>
 
-        {/* Navigation Tabs */}
         <nav className="nav-tabs">
           <button
             className={`nav-tab ${currentView === 'analyze' ? 'active' : ''}`}
             onClick={() => setCurrentView('analyze')}
           >
-            🔍 Analyze Stock
+            Analyze
           </button>
           <button
             className={`nav-tab ${currentView === 'topstocks' ? 'active' : ''}`}
             onClick={() => setCurrentView('topstocks')}
           >
-            🏆 Top 5 Buys
+            Top 5 Buys
           </button>
           <button
             className={`nav-tab ${currentView === 'portfolio' ? 'active' : ''}`}
             onClick={() => setCurrentView('portfolio')}
           >
-            💼 Portfolio
+            Portfolio
           </button>
         </nav>
+
+        <div className="header-user">
+          <span className="header-username">{user.name}</span>
+          <button className="logout-btn" onClick={handleLogout}>Sign Out</button>
+        </div>
       </header>
 
       {/* Top Stocks View */}
@@ -226,6 +233,9 @@ function App() {
                 <div
                   className={`flip-card-wrapper ${flippedCards.has('rsi') ? 'flipped' : ''}`}
                   onClick={() => toggleFlip('rsi')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('rsi')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
@@ -236,8 +246,17 @@ function App() {
                           {data.signals?.rsi}
                         </div>
                         {data.indicators?.rsi && (
-                          <div className="rsi-gauge">
-                            <div className="rsi-marker" style={{ left: `${data.indicators.rsi}%` }}></div>
+                          <div className="rsi-gauge-wrapper">
+                            <div className="rsi-gauge">
+                              <div className="rsi-marker" style={{ left: `${data.indicators.rsi}%` }}></div>
+                              <div className="rsi-tick" style={{ left: '30%' }}></div>
+                              <div className="rsi-tick" style={{ left: '70%' }}></div>
+                            </div>
+                            <div className="rsi-gauge-labels">
+                              <span>Oversold (30)</span>
+                              <span>Neutral</span>
+                              <span>Overbought (70)</span>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -254,6 +273,9 @@ function App() {
                 <div
                   className={`flip-card-wrapper ${flippedCards.has('macd') ? 'flipped' : ''}`}
                   onClick={() => toggleFlip('macd')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('macd')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
@@ -280,6 +302,9 @@ function App() {
                 <div
                   className={`flip-card-wrapper ${flippedCards.has('trend') ? 'flipped' : ''}`}
                   onClick={() => toggleFlip('trend')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('trend')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
@@ -306,6 +331,9 @@ function App() {
                 <div
                   className={`flip-card-wrapper ${flippedCards.has('bollinger') ? 'flipped' : ''}`}
                   onClick={() => toggleFlip('bollinger')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('bollinger')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
@@ -365,10 +393,7 @@ function App() {
                 </div>
 
                 {/* AI Prediction — 4-Pillar Rating */}
-                <div className="card prediction-card">
-                  <div className="prediction-icon">
-                    {data.prediction?.direction === 'bullish' ? '🚀' : data.prediction?.direction === 'bearish' ? '📉' : '➡️'}
-                  </div>
+                <div className={`card prediction-card ${data.prediction?.direction === 'bullish' ? 'bullish-glow' : data.prediction?.direction === 'bearish' ? 'bearish-glow' : ''}`}>
                   <h3>4-Pillar Rating</h3>
 
                   {/* Composite rating label */}
@@ -410,7 +435,21 @@ function App() {
                     </div>
                   </div>
 
-                  <p className="prediction-reasoning">{data.prediction?.reasoning}</p>
+                  {data.prediction?.key_factors && (
+                    (data.prediction.key_factors.bullish?.length > 0 || data.prediction.key_factors.bearish?.length > 0) && (
+                      <div className="key-factors">
+                        <h4 className="key-factors-title">Key Drivers</h4>
+                        <ul className="key-factors-list">
+                          {data.prediction.key_factors.bullish.map((f, i) => (
+                            <li key={`b${i}`} className="factor bullish-factor">{f}</li>
+                          ))}
+                          {data.prediction.key_factors.bearish.map((f, i) => (
+                            <li key={`r${i}`} className="factor bearish-factor">{f}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  )}
                   <p className="model-accuracy">Model Training Accuracy: {data.prediction?.model_accuracy}%</p>
                 </div>
 

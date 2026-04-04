@@ -1,0 +1,7 @@
+Terminal 1 — Python API
+py -3.13 api/dev_server.py
+
+Terminal 2 — Vite frontend
+npm run dev
+
+Open: http://localhost:5173

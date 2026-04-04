@@ -271,28 +271,30 @@
 
 /* Header */
 .header {
-  text-align: center;
-  margin-bottom: var(--spacing-2xl);
-  padding: var(--spacing-lg) 0;
-}
-
-.header-top {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-xs);
+  justify-content: space-between;
+  padding: 0 var(--spacing-xl);
+  height: 56px;
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(16px);
+  margin-bottom: var(--spacing-2xl);
 }
 
-.header h1 {
+.header-logo {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
 }
 
 .header-icon {
-  font-size: 1.75rem;
+  font-size: 1.375rem;
 }
 
 .gradient-text {
@@ -302,9 +304,15 @@
   background-clip: text;
 }
 
-.header p {
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.header-username {
+  font-size: 0.8125rem;
   color: var(--text-muted);
-  font-size: 0.875rem;
 }
 
 .logout-btn {
@@ -328,13 +336,11 @@
 /* Navigation Tabs */
 .nav-tabs {
   display: flex;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-lg);
+  gap: var(--spacing-xs);
 }
 
 .nav-tab {
-  padding: 12px 24px;
+  padding: 8px 18px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 9999px;
@@ -691,8 +697,8 @@
 /* Back face — rotated 180° so it shows when flipped */
 .flip-card-back {
   transform: rotateY(180deg);
-  background: linear-gradient(145deg, rgba(99, 102, 241, 0.15), rgba(15, 22, 41, 0.95));
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  background: linear-gradient(145deg, rgba(0, 200, 5, 0.08), rgba(15, 20, 15, 0.97));
+  border: 1px solid rgba(0, 200, 5, 0.15);
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -707,7 +713,7 @@
 .flip-card-back-icon {
   font-size: 2rem;
   margin-bottom: 4px;
-  filter: drop-shadow(0 2px 8px rgba(99, 102, 241, 0.4));
+  filter: drop-shadow(0 2px 8px rgba(0, 200, 5, 0.3));
 }
 
 .flip-card-back-title {
@@ -856,6 +862,29 @@
   transition: left var(--transition-normal);
 }
 
+.rsi-gauge-wrapper {
+  position: relative;
+  margin-top: var(--spacing-sm);
+}
+
+.rsi-tick {
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateX(-50%);
+}
+
+.rsi-gauge-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.5625rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
 /* Chart Grid */
 .chart-prediction-grid {
   display: grid;
@@ -891,10 +920,18 @@
   padding: var(--spacing-xl);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
+  align-items: stretch;
+  text-align: left;
   position: relative;
   overflow: hidden;
+}
+
+.prediction-card.bullish-glow {
+  box-shadow: var(--shadow-card), 0 0 40px rgba(0, 200, 5, 0.06);
+}
+
+.prediction-card.bearish-glow {
+  box-shadow: var(--shadow-card), 0 0 40px rgba(255, 59, 48, 0.06);
 }
 
 .prediction-card::after {
@@ -906,11 +943,7 @@
 }
 
 .prediction-icon {
-  font-size: 3rem;
-  margin-bottom: var(--spacing-sm);
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
-  position: relative;
-  z-index: 1;
+  display: none;
 }
 
 .prediction-card h3 {
@@ -923,7 +956,7 @@
 
 .prediction-title {
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 800;
   margin-bottom: var(--spacing-md);
   letter-spacing: -0.02em;
 }
@@ -990,6 +1023,47 @@
   color: var(--text-secondary);
   font-size: 0.8125rem;
   line-height: 1.6;
+}
+
+.key-factors {
+  margin-top: var(--spacing-md);
+}
+
+.key-factors-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 0 0 6px 0;
+}
+
+.key-factors-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.factor {
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+.bullish-factor {
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  border-left: 2px solid #10b981;
+}
+
+.bearish-factor {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border-left: 2px solid #ef4444;
 }
 
 .model-accuracy {
@@ -1136,7 +1210,7 @@
 .stock-chip:hover {
   background: var(--accent-green);
   border-color: transparent;
-  color: white;
+  color: #000;
   transform: translateY(-3px);
   box-shadow: 0 6px 20px rgba(0, 200, 5, 0.25);
 }
@@ -1418,9 +1492,9 @@
   font-weight: 700;
   padding: 3px 10px;
   border-radius: 9999px;
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  color: var(--accent-cyan);
+  background: rgba(0, 200, 5, 0.08);
+  border: 1px solid rgba(0, 200, 5, 0.20);
+  color: var(--accent-green);
   letter-spacing: 0.03em;
 }
 
@@ -1661,7 +1735,7 @@
 
 /* Portfolio Chart */
 .portfolio-chart {
-  margin: var(--spacing-lg) calc(-1 * var(--spacing-lg));
+  margin: var(--spacing-lg) calc(-1 * var(--spacing-xl));
   height: 180px;
 }
 
