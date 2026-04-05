@@ -2,9 +2,44 @@
  * API Service for Stock Analysis
  * Results are cached in localStorage per symbol per day.
  * Stale at midnight so data stays current with market moves.
+ *
+ * SECURITY:
+ *  - validateSymbol() enforces a client-side regex whitelist before the
+ *    request is sent. This is a UX guard — the server enforces the same
+ *    rule independently. Never rely on client-side validation alone.
+ *  - Symbol is URL-encoded via encodeURIComponent() before interpolation
+ *    into the fetch URL, preventing any parameter-injection attempt even
+ *    if the regex were somehow bypassed (defence-in-depth).
+ *  - No API keys or secrets are present in this file; Yahoo Finance is a
+ *    public endpoint that requires no auth tokens.
+ *  - localStorage caches only public stock data — no PII, no credentials.
+ *    Cached entries are keyed by symbol + date so stale data auto-expires.
  */
 
 const API_BASE = '/api';
+
+// ── Client-side input validation ───────────────────────────────────────────
+// Mirrors the server-side regex in api/utils/security.py.
+// Must match: 1-10 uppercase letters, optional single dot + 1-2 letters (e.g. BRK.B).
+// This is a UX guard only — the backend validates independently.
+const SYMBOL_RE = /^[A-Z]{1,10}(\.[A-Z]{1,2})?$/;
+
+/**
+ * Validate a stock symbol client-side.
+ * Returns the normalised (trimmed + uppercased) symbol, or throws on invalid input.
+ * @param {string} raw - Raw user input
+ * @returns {string} Normalised symbol
+ */
+function validateSymbol(raw) {
+    if (typeof raw !== 'string') throw new Error('Symbol must be a string.');
+    const sym = raw.trim().toUpperCase();
+    if (!sym) throw new Error('Please enter a stock symbol.');
+    if (sym.length > 20) throw new Error('Symbol is too long.');
+    if (!SYMBOL_RE.test(sym)) {
+        throw new Error('Invalid symbol. Use 1–10 letters (e.g. AAPL, BRK.B).');
+    }
+    return sym;
+}
 
 // Bump this when a deployment changes the data shape or fixes bad cached data.
 // Any localStorage entry from an older version is automatically discarded.
@@ -47,7 +82,9 @@ function writeAnalysisCache(symbol, data) {
 
 // ── Public API ─────────────────────────────────────────────────
 export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
-    const key = symbol.trim().toUpperCase();
+    // Validate and normalise before any cache lookup or network request.
+    // validateSymbol() throws a user-friendly Error if input is invalid.
+    const key = validateSymbol(symbol);
 
     // Return cached result if available and not force-refreshing
     if (!forceRefresh) {

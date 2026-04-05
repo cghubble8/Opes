@@ -3,13 +3,40 @@ Shared scoring functions used by both analyze.py and topstocks.py.
 """
 import numpy as np
 
+# Trailing PE medians by sector (2024-2025 market conditions)
+SECTOR_PE_MEDIANS = {
+    "Technology":             28,
+    "Communication Services": 22,
+    "Consumer Cyclical":      24,
+    "Consumer Discretionary": 24,
+    "Consumer Defensive":     20,
+    "Healthcare":             22,
+    "Financial":              13,
+    "Financial Services":     13,
+    "Energy":                 12,
+    "Utilities":              16,
+    "Industrials":            20,
+    "Basic Materials":        15,
+    "Real Estate":            35,
+}
 
-def compute_fundamentals_score(fund):
-    """Score company quality from fundamentals, 0-100. Higher is better."""
+def _normalize_sector(sector):
+    """Normalize Yahoo Finance sector string inconsistencies to lookup keys."""
+    if not sector:
+        return None
+    aliases = {"Financial Services": "Financial", "Consumer Discretionary": "Consumer Cyclical"}
+    return aliases.get(sector.strip(), sector.strip())
+
+
+def compute_fundamentals_score(fund, sector_medians=None):
+    """Score company quality from fundamentals, 0-100. Higher is better.
+    sector_medians: optional dict of {sector: median_pe} to override SECTOR_PE_MEDIANS.
+    """
     if not fund or "error" in fund:
         return None
 
     score = 50.0
+    medians = sector_medians or SECTOR_PE_MEDIANS
 
     pe = fund.get("pe_ratio")
     earnings_growth = fund.get("earnings_growth")  # e.g. 0.15 = 15% YoY growth
@@ -24,12 +51,28 @@ def compute_fundamentals_score(fund):
             elif peg < 2.0:  score -= 5   # Somewhat expensive
             else:            score -= 15  # Expensive relative to growth
         else:
-            # Fallback to absolute PE when growth data unavailable
-            if pe <= 0:    score -= 10
-            elif pe < 15:  score += 20
-            elif pe < 25:  score += 10
-            elif pe < 35:  score += 0
-            else:          score -= 15
+            # Fallback: sector-relative PE when growth data unavailable
+            if pe <= 0:
+                score -= 10
+            else:
+                sector_median = medians.get(_normalize_sector(fund.get("sector")))
+                if sector_median:
+                    ratio = pe / sector_median
+                    if ratio < 0.60:   score += 20
+                    elif ratio < 0.85: score += 12
+                    elif ratio < 1.15: score += 3
+                    elif ratio < 1.50: score -= 5
+                    else:              score -= 15
+                    # Forward PE tilt: bonus if forward PE signals earnings acceleration
+                    forward_pe = fund.get("forward_pe")
+                    if forward_pe and forward_pe > 0 and forward_pe < pe * 0.85:
+                        score += 5
+                else:
+                    # Unknown sector: fall back to absolute PE thresholds
+                    if pe < 15:    score += 20
+                    elif pe < 25:  score += 10
+                    elif pe < 35:  score += 0
+                    else:          score -= 15
 
     roe = fund.get("roe")
     if roe is not None:

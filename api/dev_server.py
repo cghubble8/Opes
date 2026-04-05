@@ -25,6 +25,9 @@ class DevRouter(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_OPTIONS(self):
+        # Wildcard CORS is intentional here — this file runs only in local
+        # development (never deployed). Production handlers in analyze.py and
+        # topstocks.py enforce an explicit origin allowlist via security.py.
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')

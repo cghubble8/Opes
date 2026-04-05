@@ -40,17 +40,20 @@ Two Vercel Python serverless handlers:
 - ML features: 5-day returns/volume/HL ratio, price position, RSI proxy, SMA crossover, Bollinger %B, 52-week high distance, ROC deceleration
 - Label threshold: >0.5% forward return (not just >0)
 - Neutral band: returns "Neutral / Hold" when model confidence is 0.45–0.55
+- Walk-forward validation: 3-fold expanding (train 60/70/80%, test 70/80/90%); averaged accuracy returned as `validation_accuracy`; caveat appended to reasoning when accuracy < majority-class baseline + 5pp
 - Composite quality score: fundamentals 40% + ML confidence 40% + momentum 20%
 
 **`topstocks.py` — `GET /api/topstocks`**
 - Processes hardcoded `WATCHLIST` (18 large-cap stocks: NVDA, META, AMZN, AAPL, GOOGL, etc.)
-- Concurrent price fetch (uncapped threads) + concurrent fundamentals fetch (uncapped — Yahoo Finance has no rate limit)
-- Same ML feature set and 4-pillar scoring as `analyze.py`
+- Concurrent price fetch (uncapped threads) + concurrent fundamentals fetch (uncapped — Yahoo Finance has no rate limit); fundamentals fetch includes `assetProfile` module for sector data
+- Same ML feature set, 3-fold walk-forward, and 4-pillar scoring as `analyze.py`
+- Computes per-sector median PE dynamically from watchlist fundamentals via `_compute_sector_medians()` — no stale hardcoded values
 - Returns top 5 bullish stocks by quality score; pads with non-bullish if fewer than 5
 - Neutral-direction stocks are excluded from top picks
 
 **`api/utils/scoring.py`** — shared scoring logic imported by both handlers:
-- `compute_fundamentals_score(fund)` — uses PEG ratio (PE / earnings growth%) when `earnings_growth` available; falls back to absolute PE thresholds
+- `compute_fundamentals_score(fund, sector_medians=None)` — uses PEG ratio (PE / earnings growth%) when `earnings_growth` available; falls back to sector-relative PE (via `SECTOR_PE_MEDIANS` or caller-supplied `sector_medians` dict) with a forward PE acceleration bonus; absolute PE thresholds only for unknown sectors
+- `SECTOR_PE_MEDIANS` — hardcoded trailing PE medians by sector (2024-2025); used as fallback in `analyze.py`; overridden by dynamic medians in `topstocks.py`
 - `compute_momentum_score(closes)` — includes overextension penalty when price exceeds Bollinger upper band
 - `compute_quality_score(ml_confidence, fund_score, momentum_score)`
 - `quality_score_to_label(score, direction)`
@@ -65,12 +68,6 @@ Two Vercel Python serverless handlers:
 | Yahoo Finance quoteSummary (`/v10/finance/quoteSummary`) | None | PE, ROE, EPS, profit margin, earnings growth, sector, 52-week high/low, beta |
 
 All fundamentals now come from Yahoo Finance. Alpha Vantage is no longer used.
-
-### Local Dev Notes
-
-- Packages must be installed on Python 3.13 specifically (`py -3.13`); the project machine also has Python 3.14 which lacks the dependencies
-- `vercel dev` does not work with this project — use the two-terminal setup instead
-- Vite proxies `/api/*` to `http://localhost:8000` (configured in `vite.config.js`)
 
 ### Deployment
 
