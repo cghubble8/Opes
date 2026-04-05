@@ -38,7 +38,6 @@ function Login({ onLogin }) {
                 {/* Logo */}
                 <div className="login-header">
                     <div className="login-logo">
-                        <span className="logo-icon">📊</span>
                         <span className="logo-text">FinAssist</span>
                     </div>
                     <p className="login-subtitle">AI-Powered Stock Analysis</p>
@@ -92,7 +91,7 @@ function Login({ onLogin }) {
                     onClick={handleDemoLogin}
                     disabled={loading}
                 >
-                    🚀 Try Demo Account
+                    Try Demo Account
                 </button>
 
                 {/* Footer */}

@@ -47,8 +47,8 @@ function CandlestickLoader({ message = 'Loading...' }) {
           ))}
 
           {candles.map((c, i) => {
-            const green = '#10b981'
-            const red = '#ef4444'
+            const green = '#34D27A'
+            const red = '#FF6058'
             const colour = c.bull ? green : red
 
             const bodyTop = toY(c.bodyHi)

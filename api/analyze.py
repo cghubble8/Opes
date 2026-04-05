@@ -204,12 +204,41 @@ def get_quote(symbol):
         return {"error": "Failed to fetch quote."}
 
 
-def get_company_overview(symbol):
-    """Fetch company fundamentals via Yahoo Finance quoteSummary (no auth required)."""
+def _get_yf_crumb():
+    """
+    Fetch a Yahoo Finance session cookie and crumb token.
+    YF quoteSummary v10 requires a crumb param; without it the endpoint returns
+    empty results and all fundamental fields come back None.
+    Returns (session, crumb_str) — crumb is None on failure; callers degrade gracefully.
+    """
+    session = requests.Session()
     try:
+        # Prime the session with a Yahoo Finance cookie (fc.yahoo.com sets the consent cookie)
+        session.get("https://fc.yahoo.com", headers=YF_HEADERS, timeout=5, allow_redirects=True)
+    except Exception:
+        pass  # endpoint sometimes times out; continue with whatever cookies landed
+    try:
+        resp = session.get(
+            "https://query1.finance.yahoo.com/v1/test/getcrumb",
+            headers=YF_HEADERS,
+            timeout=10,
+        )
+        crumb = resp.text.strip() if resp.status_code == 200 and resp.text else None
+        return session, crumb
+    except Exception as e:
+        print(f"[_get_yf_crumb] {type(e).__name__}: {e}")
+        return session, None
+
+
+def get_company_overview(symbol):
+    """Fetch company fundamentals via Yahoo Finance quoteSummary."""
+    try:
+        session, crumb = _get_yf_crumb()
         url = YF_SUMMARY_URL.format(symbol=symbol)
         params = {"modules": "defaultKeyStatistics,financialData,summaryDetail,assetProfile"}
-        response = requests.get(url, params=params, headers=YF_HEADERS, timeout=15)
+        if crumb:
+            params["crumb"] = crumb
+        response = session.get(url, params=params, headers=YF_HEADERS, timeout=15)
         data = response.json()
 
         result = safe_get(data, "quoteSummary", "result")

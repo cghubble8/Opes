@@ -187,12 +187,45 @@ def get_stock_data(symbol, sector):
         return None
 
 
-def get_fundamentals(symbol):
-    """Fetch company fundamentals via Yahoo Finance quoteSummary (no auth required)."""
+def _get_yf_crumb():
+    """
+    Fetch a Yahoo Finance session cookie and crumb token.
+    YF quoteSummary v10 requires a crumb param; without it the endpoint returns
+    empty results. Returns (cookies_dict, crumb_str) — crumb is None on failure.
+    A dict of cookies (not the session itself) is returned so each worker thread
+    can construct its own requests.Session safely — Session is not thread-safe.
+    """
+    session = requests.Session()
     try:
+        session.get("https://fc.yahoo.com", headers=YF_HEADERS, timeout=5, allow_redirects=True)
+    except Exception:
+        pass
+    try:
+        resp = session.get(
+            "https://query1.finance.yahoo.com/v1/test/getcrumb",
+            headers=YF_HEADERS,
+            timeout=10,
+        )
+        crumb   = resp.text.strip() if resp.status_code == 200 and resp.text else None
+        cookies = dict(session.cookies)
+        return cookies, crumb
+    except Exception as e:
+        print(f"[_get_yf_crumb] {type(e).__name__}: {e}")
+        return {}, None
+
+
+def get_fundamentals(symbol, crumb=None, cookies=None):
+    """Fetch company fundamentals via Yahoo Finance quoteSummary."""
+    try:
+        # Each thread gets its own session seeded with the shared cookie jar and crumb.
+        session = requests.Session()
+        if cookies:
+            session.cookies.update(cookies)
         url = YF_SUMMARY_URL.format(symbol=symbol)
         params = {"modules": "defaultKeyStatistics,financialData,summaryDetail,assetProfile"}
-        response = requests.get(url, params=params, headers=YF_HEADERS, timeout=10)
+        if crumb:
+            params["crumb"] = crumb
+        response = session.get(url, params=params, headers=YF_HEADERS, timeout=10)
         data = response.json()
 
         result = safe_get(data, "quoteSummary", "result")
@@ -466,13 +499,16 @@ class handler(BaseHTTPRequestHandler):
                         pass   # skip failed symbols silently
 
             # ── Step 2: Fetch all fundamentals concurrently ────────────────
-            # Same cap — fundamentals fetches are also I/O-bound but we keep
-            # the pool bounded for the same DoS-mitigation reason.
+            # Crumb is fetched once here and shared across all worker threads.
+            # Each thread creates its own Session seeded with the shared cookies
+            # (requests.Session is not thread-safe for concurrent use).
+            yf_cookies, yf_crumb = _get_yf_crumb()
+
             symbols_with_data = list(price_results.keys())
             fund_results = {}
             with ThreadPoolExecutor(max_workers=MAX_FUND_WORKERS) as ex:
                 future_to_sym = {
-                    ex.submit(get_fundamentals, sym): sym
+                    ex.submit(get_fundamentals, sym, yf_crumb, yf_cookies): sym
                     for sym in symbols_with_data
                 }
                 for future in as_completed(future_to_sym):

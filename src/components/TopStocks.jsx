@@ -38,7 +38,7 @@ function TopStocks({ onStockSelect }) {
         return (
             <div className="top-stocks-container">
                 <div className="error-container">
-                    <div className="error-icon">⚠️</div>
+                    <div className="error-icon">!</div>
                     <p className="error-message">{error}</p>
                     <button className="btn-primary" onClick={loadTopStocks}>Try Again</button>
                 </div>

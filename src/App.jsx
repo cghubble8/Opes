@@ -9,22 +9,18 @@ import './App.css'
 
 const indicatorDefs = {
     rsi: {
-      icon: '📉',
       title: 'RSI — Relative Strength Index',
       desc: 'Measures how overbought or oversold a stock is on a 0–100 scale. Above 70 = likely overbought (due for a pullback). Below 30 = likely oversold (potential bounce). The sweet spot for buying is often 40–60.',
     },
     macd: {
-      icon: '📊',
       title: 'MACD — Moving Avg Convergence Divergence',
       desc: 'Tracks momentum by comparing two moving averages. When the MACD line crosses above its signal line, it\'s a bullish sign. When it crosses below, it\'s bearish. Think of it as a momentum speedometer.',
     },
     trend: {
-      icon: '📈',
       title: 'Moving Averages & Trend',
       desc: 'Compares the 20-day and 50-day average prices to identify the trend direction. Price above both averages = uptrend. Below both = downtrend. Traders use these as dynamic support and resistance levels.',
     },
     bollinger: {
-      icon: '🎯',
       title: 'Bollinger Bands',
       desc: 'Two bands plotted around a 20-day moving average. When price touches the upper band, it may be overextended. Near the lower band, it may be undervalued. A squeeze (bands narrowing) often signals a big move ahead.',
     },
@@ -118,7 +114,6 @@ function App() {
       {/* Header */}
       <header className="header">
         <div className="header-logo">
-          <span className="header-icon">📊</span>
           <span className="gradient-text">FinAssist</span>
         </div>
 
@@ -173,7 +168,7 @@ function App() {
                 onChange={(e) => setSymbol(e.target.value.toUpperCase())}
               />
               <button type="submit" className="btn-primary search-btn" disabled={loading}>
-                {loading ? '⏳' : '🔍'} Analyze
+                {loading ? 'Analyzing...' : 'Analyze'}
               </button>
             </form>
           </section>
@@ -186,7 +181,7 @@ function App() {
           {/* Error State */}
           {error && (
             <div className="error-container">
-              <div className="error-icon">⚠️</div>
+              <div className="error-icon">!</div>
               <p className="error-message">{error}</p>
             </div>
           )}
@@ -194,7 +189,7 @@ function App() {
           {/* Welcome State */}
           {!loading && !error && !data && (
             <div className="welcome-container">
-              <div className="welcome-icon">📈</div>
+              <div className="welcome-icon">◈</div>
               <h2 className="welcome-title">Enter a stock symbol to begin analysis</h2>
               <p className="welcome-subtitle">Get technical indicators, fundamentals, and AI predictions</p>
               <div className="popular-stocks">
@@ -235,12 +230,13 @@ function App() {
                   onClick={() => toggleFlip('rsi')}
                   role="button"
                   tabIndex={0}
+                  aria-label="RSI indicator — tap to learn more"
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('rsi')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
-                        <h3>📉 RSI (14)</h3>
+                        <h3>RSI (14)</h3>
                         <div className="indicator-value">{data.indicators?.rsi?.toFixed(1) || 'N/A'}</div>
                         <div className={`indicator-signal signal-${data.signals?.rsi?.toLowerCase().replace(' ', '-')}`}>
                           {data.signals?.rsi}
@@ -262,7 +258,7 @@ function App() {
                       </div>
                     </div>
                     <div className="flip-card-back">
-                      <div className="flip-card-back-icon">{indicatorDefs.rsi.icon}</div>
+                      <div className="flip-card-back-icon">RSI</div>
                       <div className="flip-card-back-title">{indicatorDefs.rsi.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.rsi.desc}</p>
                     </div>
@@ -275,12 +271,13 @@ function App() {
                   onClick={() => toggleFlip('macd')}
                   role="button"
                   tabIndex={0}
+                  aria-label="MACD indicator — tap to learn more"
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('macd')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
-                        <h3>📊 MACD</h3>
+                        <h3>MACD</h3>
                         <div className="indicator-value">{data.indicators?.macd?.toFixed(4) || 'N/A'}</div>
                         <div className={`indicator-signal signal-${data.signals?.macd?.toLowerCase()}`}>
                           {data.signals?.macd}
@@ -291,7 +288,7 @@ function App() {
                       </div>
                     </div>
                     <div className="flip-card-back">
-                      <div className="flip-card-back-icon">{indicatorDefs.macd.icon}</div>
+                      <div className="flip-card-back-icon">MACD</div>
                       <div className="flip-card-back-title">{indicatorDefs.macd.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.macd.desc}</p>
                     </div>
@@ -304,12 +301,13 @@ function App() {
                   onClick={() => toggleFlip('trend')}
                   role="button"
                   tabIndex={0}
+                  aria-label="Moving Averages indicator — tap to learn more"
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('trend')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
-                        <h3>📈 Moving Averages</h3>
+                        <h3>Moving Averages</h3>
                         <div className="indicator-value">{data.signals?.trend}</div>
                         <div className={`indicator-signal signal-${data.signals?.trend?.toLowerCase().replace(' ', '-')}`}>
                           {data.signals?.trend}
@@ -320,7 +318,7 @@ function App() {
                       </div>
                     </div>
                     <div className="flip-card-back">
-                      <div className="flip-card-back-icon">{indicatorDefs.trend.icon}</div>
+                      <div className="flip-card-back-icon">MA</div>
                       <div className="flip-card-back-title">{indicatorDefs.trend.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.trend.desc}</p>
                     </div>
@@ -333,12 +331,13 @@ function App() {
                   onClick={() => toggleFlip('bollinger')}
                   role="button"
                   tabIndex={0}
+                  aria-label="Bollinger Bands indicator — tap to learn more"
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('bollinger')}
                 >
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
-                        <h3>🎯 Bollinger Bands</h3>
+                        <h3>Bollinger Bands</h3>
                         <div className="indicator-value">{data.signals?.bollinger}</div>
                         <div className={`indicator-signal signal-${data.signals?.bollinger?.toLowerCase().replace(/ /g, '-')}`}>
                           {data.signals?.bollinger}
@@ -349,7 +348,7 @@ function App() {
                       </div>
                     </div>
                     <div className="flip-card-back">
-                      <div className="flip-card-back-icon">{indicatorDefs.bollinger.icon}</div>
+                      <div className="flip-card-back-icon">BB</div>
                       <div className="flip-card-back-title">{indicatorDefs.bollinger.title}</div>
                       <p className="flip-card-back-desc">{indicatorDefs.bollinger.desc}</p>
                     </div>
@@ -361,32 +360,35 @@ function App() {
               <div className="chart-prediction-grid">
                 {/* Price Chart */}
                 <div className="card chart-card">
-                  <h3>📈 Price Chart with Bollinger Bands</h3>
+                  <h3>Price Chart with Bollinger Bands</h3>
                   <div className="chart-container">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={getChartData()} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                         <defs>
                           <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                            <stop offset="5%"  stopColor="#C9A84C" stopOpacity={0.28} />
+                            <stop offset="95%" stopColor="#C9A84C" stopOpacity={0} />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                        <XAxis dataKey="date" stroke="#6b6b7a" fontSize={12} />
-                        <YAxis stroke="#6b6b7a" fontSize={12} domain={['auto', 'auto']} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(201,168,76,0.08)" />
+                        <XAxis dataKey="date" stroke="#5C5248" fontSize={11} tick={{ fill: '#5C5248' }} />
+                        <YAxis stroke="#5C5248" fontSize={11} tick={{ fill: '#5C5248' }} domain={['auto', 'auto']} width={52} />
                         <Tooltip
                           contentStyle={{
-                            background: '#1a1a25',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '8px'
+                            background: '#1a1a1a',
+                            border: '1px solid rgba(201,168,76,0.22)',
+                            borderRadius: '10px',
+                            color: '#F0EAD6',
+                            fontSize: '0.8125rem',
                           }}
+                          labelStyle={{ color: '#A89880', marginBottom: '4px' }}
                         />
-                        <Area type="monotone" dataKey="upper" stroke="none" fill="rgba(239,68,68,0.1)" />
-                        <Area type="monotone" dataKey="lower" stroke="none" fill="#0a0a0f" />
-                        <Line type="monotone" dataKey="upper" stroke="#ef4444" strokeDasharray="5 5" dot={false} strokeWidth={1} />
-                        <Line type="monotone" dataKey="lower" stroke="#10b981" strokeDasharray="5 5" dot={false} strokeWidth={1} />
-                        <Line type="monotone" dataKey="sma" stroke="#f59e0b" dot={false} strokeWidth={2} />
-                        <Area type="monotone" dataKey="price" stroke="#6366f1" fill="url(#priceGradient)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="upper" stroke="none" fill="rgba(255,96,88,0.06)" />
+                        <Area type="monotone" dataKey="lower" stroke="none" fill="#080808" />
+                        <Line type="monotone" dataKey="upper" stroke="#FF6058" strokeDasharray="5 5" dot={false} strokeWidth={1} opacity={0.7} />
+                        <Line type="monotone" dataKey="lower" stroke="#34D27A" strokeDasharray="5 5" dot={false} strokeWidth={1} opacity={0.7} />
+                        <Line type="monotone" dataKey="sma" stroke="#E2C27A" dot={false} strokeWidth={1.5} opacity={0.85} />
+                        <Area type="monotone" dataKey="price" stroke="#C9A84C" fill="url(#priceGradient)" strokeWidth={2} />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -420,17 +422,17 @@ function App() {
                   {/* Sub-score breakdown */}
                   <div className="pillar-breakdown">
                     <div className="pillar-row">
-                      <span className="pillar-label">🤖 AI Confidence</span>
+                      <span className="pillar-label">AI Confidence</span>
                       <span className="pillar-value">{data.prediction?.confidence}%</span>
                     </div>
                     {data.prediction?.fund_score != null && (
                       <div className="pillar-row">
-                        <span className="pillar-label">💼 Fundamentals</span>
+                        <span className="pillar-label">Fundamentals</span>
                         <span className="pillar-value">{data.prediction.fund_score.toFixed(1)}</span>
                       </div>
                     )}
                     <div className="pillar-row">
-                      <span className="pillar-label">📈 Momentum</span>
+                      <span className="pillar-label">Momentum</span>
                       <span className="pillar-value">{data.prediction?.momentum_score?.toFixed(1)}</span>
                     </div>
                   </div>
@@ -457,7 +459,7 @@ function App() {
 
               {/* Fundamentals */}
               <div className="card fundamentals-card">
-                <h3>💼 Fundamentals</h3>
+                <h3>Fundamentals</h3>
                 <div className="fundamentals-grid">
                   <div className="fundamental-item">
                     <div className="fundamental-label">P/E Ratio</div>

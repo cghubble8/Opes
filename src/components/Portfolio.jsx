@@ -45,14 +45,14 @@ function Portfolio({ onStockSelect }) {
                 <AreaChart data={getSparklineData(data)}>
                     <defs>
                         <linearGradient id={`spark-${positive ? 'up' : 'down'}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={positive ? '#10b981' : '#ef4444'} stopOpacity={0.3} />
-                            <stop offset="95%" stopColor={positive ? '#10b981' : '#ef4444'} stopOpacity={0} />
+                            <stop offset="5%"  stopColor={positive ? '#34D27A' : '#FF6058'} stopOpacity={0.28} />
+                            <stop offset="95%" stopColor={positive ? '#34D27A' : '#FF6058'} stopOpacity={0} />
                         </linearGradient>
                     </defs>
                     <Area
                         type="monotone"
                         dataKey="value"
-                        stroke={positive ? '#10b981' : '#ef4444'}
+                        stroke={positive ? '#34D27A' : '#FF6058'}
                         fill={`url(#spark-${positive ? 'up' : 'down'})`}
                         strokeWidth={1.5}
                         dot={false}
@@ -74,7 +74,7 @@ function Portfolio({ onStockSelect }) {
         return (
             <div className="portfolio-container">
                 <div className="error-container">
-                    <div className="error-icon">⚠️</div>
+                    <div className="error-icon">!</div>
                     <p className="error-message">{error}</p>
                     <button className="btn-primary" onClick={loadPortfolio}>Try Again</button>
                 </div>
@@ -103,14 +103,14 @@ function Portfolio({ onStockSelect }) {
                         <AreaChart data={portfolio.portfolioHistory}>
                             <defs>
                                 <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                    <stop offset="5%"  stopColor="#C9A84C" stopOpacity={0.30} />
+                                    <stop offset="95%" stopColor="#C9A84C" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <Area
                                 type="monotone"
                                 dataKey="value"
-                                stroke="#10b981"
+                                stroke="#C9A84C"
                                 fill="url(#portfolioGradient)"
                                 strokeWidth={2}
                                 dot={false}
