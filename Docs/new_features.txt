@@ -1,0 +1,92 @@
+OPES — POTENTIAL NEW FEATURES
+==============================
+
+HIGH-IMPACT: Amplify the core ML differentiator
+-------------------------------------------------
+
+Stock Screener
+  Apply the ML model across 50-100 stocks simultaneously.
+  Filter by criteria: "RSI < 35 AND quality score > 70 AND bullish"
+  Essentially a customizable Top 5 Buys.
+  Backend already capable — highest ROI feature to build.
+
+Signal History / Backtesting Display
+  Show how past predictions performed:
+  "When Opes rated AAPL a Strong Buy, the stock averaged +4.2%
+  over the next 30 days across 8 signals."
+  Builds trust and differentiates from black-box apps.
+  Historical data available from Yahoo Finance.
+
+Watchlist + Price/Signal Alerts
+  Save tickers and get notified when:
+    - Price crosses a user-set threshold
+    - RSI hits oversold/overbought
+    - ML rating changes (e.g. Hold → Buy)
+  Email alerts (Resend/SendGrid) = minimum viable version.
+  Push notifications = premium version.
+  Retention driver — keeps users coming back daily.
+
+
+HIGH-IMPACT: Fill real gaps
+---------------------------
+
+News Sentiment Integration
+  Aggregate recent headlines per ticker, score bullish/bearish.
+  Feed as a 5th pillar into the quality score.
+  Yahoo Finance already returns some news data via its API.
+  Visible, understandable signal users will immediately trust.
+
+Earnings Calendar
+  Show upcoming earnings dates for any analyzed stock.
+  Warning: "Earnings in 3 days — high volatility risk."
+  Critical context for any serious trader.
+  Available free from Yahoo Finance.
+
+Stock Comparison View
+  Analyze 2-3 tickers side by side in one view.
+  Same indicators, same quality scores — e.g. "AAPL vs MSFT vs GOOGL"
+  Simple to build on top of existing analyze infrastructure.
+
+
+MEDIUM-IMPACT: Expand the audience
+-----------------------------------
+
+Macro / Market Overview Dashboard
+  Track S&P 500, Nasdaq, VIX, and sector ETFs (XLK, XLF, XLE, etc.)
+  with existing ML scoring. Gives market context before individual
+  stock analysis. "Tech sector overbought — your NVDA Buy signal
+  may be fighting the tide."
+
+Dividend Tracker
+  Yield %, payout ratio, dividend history per ticker.
+  Yahoo Finance has this data.
+  Widens appeal beyond growth/momentum traders.
+
+Real Portfolio via Plaid or Alpaca
+  Current Portfolio is mock data — cosmetic only.
+  Plaid connects to any brokerage for read-only holdings import.
+  Without real data, Portfolio and Budget are demos that pad
+  feature count without real value. Biggest credibility gap in app.
+
+
+SKIP (at least for now)
+-----------------------
+
+  Paper trading       — Robinhood/Webull do this better
+  Crypto              — Different audience, questionable fit for
+                        a fundamentals-focused app
+  Options / dark pool — Data is expensive, narrow audience
+  Social sentiment    — Noisy signal (Reddit/StockTwits), hard to do well
+
+
+PRIORITY ORDER
+--------------
+
+1. Screener           — highest leverage, backend already capable
+2. Watchlist + alerts — retention driver, daily active use
+3. Signal history     — trust builder, differentiates from black-box apps
+4. News sentiment     — 5th pillar, improves the model's story
+5. Real Portfolio     — removes biggest credibility gap in the app
+
+Core principle: features that make the ML model more useful and
+trustworthy > features that copy what other finance apps already do well.

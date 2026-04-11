@@ -10,6 +10,10 @@
             "use": "@vercel/python"
         },
         {
+            "src": "api/screener.py",
+            "use": "@vercel/python"
+        },
+        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -17,6 +21,10 @@
             }
         }
     ],
+    "functions": {
+        "api/topstocks.py": { "maxDuration": 55 },
+        "api/screener.py":  { "maxDuration": 55 }
+    },
     "routes": [
         {
             "src": "/api/analyze",
@@ -25,6 +33,10 @@
         {
             "src": "/api/topstocks",
             "dest": "/api/topstocks.py"
+        },
+        {
+            "src": "/api/screener",
+            "dest": "/api/screener.py"
         },
         {
             "handle": "filesystem"

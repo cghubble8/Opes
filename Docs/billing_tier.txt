@@ -1,0 +1,44 @@
+OPES — BILLING TIER STRUCTURE
+==============================
+
+TIER: Free
+PRICE: $0
+PLAN SLUG (Clerk): (none / default)
+
+Features:
+  - 3 stock analyses per day
+  - Prediction direction + Quality Score bar
+  - Fundamentals grid (P/E, EPS, ROE, Market Cap, 52W High/Low)
+  - Technical indicator cards (RSI, MACD, Moving Avg, Bollinger) — front face only
+  - Price chart with Bollinger Bands
+
+Locked (requires Pro):
+  - Sub-pillar breakdown (AI Confidence %, Fundamentals score, Momentum score)
+  - Key Drivers list (bullish/bearish factors)
+  - Top 5 Buys view
+  - Portfolio view
+  - Budget view
+
+
+TIER: Pro
+PRICE: $9/month
+PLAN SLUG (Clerk): pro
+
+Features (everything in Free, plus):
+  - Unlimited stock analyses
+  - Sub-pillar breakdown (AI Confidence %, Fundamentals score, Momentum score)
+  - Key Drivers list (bullish/bearish factors)
+  - Full Top 5 Buys with reasoning + quality scores
+  - Portfolio view
+  - Budget view
+
+
+CLERK FEATURES (for has() checks):
+  - unlimited_analysis
+  - full_analysis
+  - top_stocks
+  - portfolio_access
+  - budget_access
+
+NOTE: Clerk Billing is in Beta. Pin @clerk/react to a specific version
+before shipping to production to avoid breaking changes.

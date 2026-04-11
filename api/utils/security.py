@@ -233,12 +233,24 @@ def verify_clerk_jwt(token: str) -> dict:
     Raises ValueError with a generic message on any verification failure.
     This is intentional — never leak specific error details to the client.
 
+    In local development (no VERCEL_ENV and no CLERK_JWKS_URL), JWT
+    verification is bypassed so the dev server works without Clerk env vars.
+    The Python dev server is never deployed, so this is safe.
+
     Args:
         token: The JWT token (without "Bearer " prefix)
 
     Returns:
         Decoded JWT payload (dict)
     """
+    # Dev bypass: skip verification when Clerk is not configured locally.
+    # VERCEL_ENV is set by Vercel on all deployments; its absence means we
+    # are running via the local dev_server.py. CLERK_JWKS_URL absence
+    # confirms Clerk credentials are not available in this shell session.
+    if not os.environ.get("VERCEL_ENV") and not os.environ.get("CLERK_JWKS_URL"):
+        print("[AUTH] Dev mode: CLERK_JWKS_URL not set — skipping JWT verification")
+        return {"sub": "dev-user", "dev_bypass": True}
+
     try:
         # Extract the key ID (kid) from the JWT header without verification
         unverified_header = jwt.get_unverified_header(token)
