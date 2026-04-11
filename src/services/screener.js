@@ -3,7 +3,11 @@
  * Results are cached for 1 hour per direction to avoid redundant ML runs.
  */
 
-import { getAuthHeaders } from './auth';
+import { setTokenGetter, getAuthHeaders } from './auth';
+
+// Re-export so App.jsx can wire up the Clerk token getter explicitly,
+// matching the same pattern used by api.js and topStocks.js.
+export { setTokenGetter };
 
 const API_BASE = '/api';
 const CACHE_VERSION = 1;

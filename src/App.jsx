@@ -3,6 +3,7 @@ import { useUser, useAuth, Show, SignIn, UserButton } from '@clerk/react'
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart } from 'recharts'
 import { analyzeStock, setTokenGetter as setAnalyzeTokenGetter } from './services/api'
 import { setTokenGetter as setTopStocksTokenGetter } from './services/topStocks'
+import { setTokenGetter as setScreenerTokenGetter } from './services/screener'
 import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
@@ -43,6 +44,7 @@ function App() {
     const getter = () => getToken()
     setAnalyzeTokenGetter(getter)
     setTopStocksTokenGetter(getter)
+    setScreenerTokenGetter(getter)
   }, [getToken])
 
   const handleSubmit = async (e) => {
