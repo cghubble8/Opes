@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useUser, useAuth, Show, SignIn, UserButton } from '@clerk/react'
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart } from 'recharts'
-import { analyzeStock } from './services/api'
+import { analyzeStock, setTokenGetter as setAnalyzeTokenGetter } from './services/api'
+import { setTokenGetter as setTopStocksTokenGetter } from './services/topStocks'
 import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
-import Login from './components/Login'
+import Budget from './components/Budget'
 import './App.css'
 
 const indicatorDefs = {
@@ -27,23 +29,21 @@ const indicatorDefs = {
 }
 
 function App() {
+  const { user } = useUser()
+  const { getToken } = useAuth()
   const [symbol, setSymbol] = useState('')
   const [flippedCards, setFlippedCards] = useState(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
-  const [currentView, setCurrentView] = useState('analyze') // 'analyze', 'topstocks', or 'portfolio'
-  const [user, setUser] = useState(null) // authentication state
+  const [currentView, setCurrentView] = useState('analyze') // 'analyze', 'topstocks', 'portfolio', or 'budget'
 
-  const handleLogin = (userData) => {
-    setUser(userData)
-  }
-
-  const handleLogout = () => {
-    setUser(null)
-    setData(null)
-    setSymbol('')
-  }
+  // Wire token getter into services
+  useEffect(() => {
+    const getter = () => getToken()
+    setAnalyzeTokenGetter(getter)
+    setTopStocksTokenGetter(getter)
+  }, [getToken])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -104,17 +104,37 @@ function App() {
     })
   }
 
-  // Show login page if not authenticated
-  if (!user) {
-    return <Login onLogin={handleLogin} />
-  }
-
   return (
-    <div className="app-container">
+    <>
+      <Show when="signed-out">
+        <div className="auth-page">
+          <div className="auth-content">
+            <div className="auth-header">
+              <h1 className="auth-title">Opes</h1>
+              <p className="auth-subtitle">AI-Powered Stock Analysis</p>
+            </div>
+            <SignIn
+              appearance={{
+                elements: {
+                  rootBox: "w-full",
+                  card: "shadow-lg rounded-xl border border-[rgba(201,168,76,0.2)] bg-[#0f0e0b]"
+                }
+              }}
+            />
+          </div>
+          <div className="auth-bg-decoration">
+            <div className="bg-circle bg-circle-1"></div>
+            <div className="bg-circle bg-circle-2"></div>
+            <div className="bg-circle bg-circle-3"></div>
+          </div>
+        </div>
+      </Show>
+      <Show when="signed-in">
+        <div className="app-container">
       {/* Header */}
       <header className="header">
         <div className="header-logo">
-          <span className="gradient-text">FinAssist</span>
+          <span className="gradient-text">Opes</span>
         </div>
 
         <nav className="nav-tabs">
@@ -136,11 +156,16 @@ function App() {
           >
             Portfolio
           </button>
+          <button
+            className={`nav-tab ${currentView === 'budget' ? 'active' : ''}`}
+            onClick={() => setCurrentView('budget')}
+          >
+            Budget
+          </button>
         </nav>
 
         <div className="header-user">
-          <span className="header-username">{user.name}</span>
-          <button className="logout-btn" onClick={handleLogout}>Sign Out</button>
+          <UserButton afterSignOutUrl="/" />
         </div>
       </header>
 
@@ -152,6 +177,11 @@ function App() {
       {/* Portfolio View */}
       {currentView === 'portfolio' && (
         <Portfolio onStockSelect={handleQuickSearch} />
+      )}
+
+      {/* Budget View */}
+      {currentView === 'budget' && (
+        <Budget />
       )}
 
       {/* Analyze View */}
@@ -491,7 +521,9 @@ function App() {
           )}
         </>
       )}
-    </div>
+        </div>
+      </Show>
+    </>
   )
 }
 

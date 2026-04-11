@@ -2,7 +2,12 @@
  * Top Stocks Service - Fetches top buy-rated stocks from API
  */
 
+import { setTokenGetter, getAuthHeaders } from './auth';
+
 const API_BASE = '/api';
+
+// Re-export setTokenGetter for backwards compatibility with App.jsx
+export { setTokenGetter };
 
 // Mock data for development fallback
 export const topStocksMockData = [
@@ -105,7 +110,9 @@ export async function getTopStocks({ forceRefresh = false } = {}) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/topstocks`);
+        const headers = await getAuthHeaders();
+
+        const response = await fetch(`${API_BASE}/topstocks`, { headers });
 
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
@@ -115,6 +122,9 @@ export async function getTopStocks({ forceRefresh = false } = {}) {
         const data = await response.json();
 
         if (!response.ok) {
+            if (response.status === 401) {
+                throw new Error('Session expired. Please sign in again.');
+            }
             throw new Error(data.error || 'Failed to fetch top stocks');
         }
 

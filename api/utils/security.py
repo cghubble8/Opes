@@ -1,5 +1,5 @@
 """
-api/utils/security.py — Shared security utilities for FinAssist-V2 API handlers.
+api/utils/security.py — Shared security utilities for Opes API handlers.
 
 Security measures implemented here:
   1. INPUT VALIDATION
@@ -57,6 +57,10 @@ RATE_LIMIT_NOTE:
 
 import re
 import os
+import jwt
+import json
+import time
+from urllib.request import urlopen
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # Explicit origin allowlist — no wildcard. Add your production domain here.
@@ -65,8 +69,7 @@ import os
 # domain and localhost for dev. Preview deployments run on the same Vercel
 # project domain, so they do not need a separate origin.
 _PRODUCTION_ORIGINS = [
-    "https://fin-assist-v2.vercel.app",       # primary production domain
-    "https://finassist-v2.vercel.app",         # alternate slug (if used)
+    "https://opes.vercel.app",       # production domain
 ]
 
 def _build_allowed_origins():
@@ -126,6 +129,8 @@ def validate_symbol(raw: str) -> str:
 # internal paths, library names, and data structure details (CWE-209).
 _SAFE_ERROR_MESSAGES = {
     400: "Bad request.",
+    401: "Unauthorized.",
+    403: "Unauthorized.",   # same text — never leak whether user exists vs. lacks permission
     404: "Not found.",
     429: "Too many requests. Please try again later.",
     500: "An internal error occurred. Please try again.",
@@ -189,6 +194,100 @@ def get_cors_preflight_headers(request_origin: str | None = None) -> dict:
     headers = get_security_headers(request_origin)
     if "Access-Control-Allow-Origin" in headers:
         headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        headers["Access-Control-Allow-Headers"] = "Content-Type"
+        headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         headers["Access-Control-Max-Age"] = "86400"   # cache preflight 24 h
     return headers
+
+
+# ── JWT VALIDATION (Clerk) ───────────────────────────────────────────────────
+_JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
+_JWKS_TTL = 3600  # 1 hour
+
+
+def _fetch_jwks() -> dict:
+    """Fetch Clerk's JWKS from the configured URL. Uses module-level cache."""
+    jwks_url = os.environ.get("CLERK_JWKS_URL")
+    if not jwks_url:
+        raise ValueError("CLERK_JWKS_URL environment variable is not set")
+
+    now = time.time()
+    # Return cached JWKS if still valid
+    if _JWKS_CACHE["keys"] and (now - _JWKS_CACHE["fetched_at"]) < _JWKS_TTL:
+        return _JWKS_CACHE["keys"]
+
+    # Fetch fresh JWKS
+    try:
+        with urlopen(jwks_url, timeout=5) as response:
+            jwks = json.loads(response.read().decode())
+        _JWKS_CACHE["keys"] = jwks
+        _JWKS_CACHE["fetched_at"] = now
+        return jwks
+    except Exception as e:
+        raise ValueError(f"Failed to fetch JWKS: {e}")
+
+
+def verify_clerk_jwt(token: str) -> dict:
+    """
+    Verify a Clerk JWT token and return the decoded payload.
+
+    Raises ValueError with a generic message on any verification failure.
+    This is intentional — never leak specific error details to the client.
+
+    Args:
+        token: The JWT token (without "Bearer " prefix)
+
+    Returns:
+        Decoded JWT payload (dict)
+    """
+    try:
+        # Extract the key ID (kid) from the JWT header without verification
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+        if not kid:
+            raise ValueError("No key ID in token")
+
+        # Fetch JWKS and find the matching key
+        jwks = _fetch_jwks()
+        matching_key = None
+        for key in jwks.get("keys", []):
+            if key.get("kid") == kid:
+                matching_key = key
+                break
+
+        if not matching_key:
+            raise ValueError(f"Key {kid} not found in JWKS")
+
+        # Convert JWK to RSA public key
+        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(matching_key))
+
+        # Verify and decode the token
+        # verify_aud=False is intentional — Clerk session tokens use 'azp', not 'aud'
+        # Signature and expiry (exp) are still fully verified
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            options={"verify_aud": False}
+        )
+
+        # Validate authorized party (azp) to prevent cross-tenant token acceptance
+        # This ensures tokens from other Clerk applications are rejected (CWE-287)
+        authorized_party = os.environ.get("CLERK_AUTHORIZED_PARTY")
+        if authorized_party:
+            token_azp = payload.get("azp")
+            if token_azp != authorized_party:
+                raise ValueError("Token authorized party mismatch")
+
+        return payload
+
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token has expired")
+    except jwt.InvalidSignatureError:
+        raise ValueError("Invalid token signature")
+    except (jwt.DecodeError, ValueError) as e:
+        # Log the detail server-side for debugging
+        print(f"[INTERNAL ERROR 401] JWT validation failed: {e}")
+        raise ValueError("Invalid token")
+    except Exception as e:
+        print(f"[INTERNAL ERROR 401] Unexpected JWT error: {e}")
+        raise ValueError("Authentication failed")

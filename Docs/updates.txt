@@ -1,3 +1,89 @@
+04/10/26 SESSION UPDATES
+===============
+
+1. APP REBRANDING: FinAssist-V2 → Opes
+------------------------------------
+Rebranded the entire application from "FinAssist-V2" to "Opes" across all user-facing
+and backend components.
+
+- package.json: Updated app name to "opes"
+- index.html: Updated page title and meta description
+- src/App.jsx: Changed header logo and auth page branding to "Opes"
+- src/components/Login.jsx: Updated demo email to demo@opes.com
+- src/main.jsx: Updated Vercel authorized party domain to opes.vercel.app
+- api/utils/security.py: Updated production origins and docstring references
+- CLAUDE.md: Updated architecture description
+- src/App.css: Updated mobile responsiveness comment
+- Docs/updates.txt: Updated documentation examples
+
+
+2. BUDGET TRACKING PAGE
+-----------------------
+Added a new Budget view for personal financial tracking with editable categories
+and transaction history visualization.
+
+- src/components/Budget.jsx: Full-featured budget management component with:
+    • Budget overview summary card (Total Budget, Spent, Remaining)
+    • Interactive progress bar with color-coded thresholds (gold ≤50%, warning 50-75%, red >75%)
+    • Pie chart visualization of spending by category using Recharts
+    • Category breakdown with editable per-category budgets (click to edit, press Enter to save)
+    • Over-budget alerts with red warning badge
+    • Recent transactions list showing 8 latest transactions with category badges
+    • Editable total budget with pro-rata scaling of all category budgets
+    • Keyboard shortcuts: Enter to save, Escape to cancel edits
+    • Loading and error states with CandlestickLoader
+
+- src/services/budget.js: Mock budget service with localStorage persistence
+    • DEFAULT_CATEGORIES: 7 hardcoded spending categories (Housing, Food & Dining, etc.)
+    • MOCK_TRANSACTIONS: 12 sample transactions from April 2026
+    • saveBudget(): Persists edited category budgets to localStorage (key: 'budget_v1')
+    • getBudget(): Returns budget object with calculated totals, remaining balance, transactions
+    • Merges saved data with defaults to preserve color coding and transaction history
+
+- src/App.jsx: Added Budget view to nav tabs
+    • New "Budget" tab in header navigation alongside Analyze, Top 5 Buys, Portfolio
+    • Integrated into view routing alongside existing analyze/topstocks/portfolio views
+
+- src/App.css: Styled budget components with glass morphism cards, responsive grid layout
+
+
+3. CLERK AUTHENTICATION INTEGRATION
+------------------------------------
+Implemented Clerk as the zero-trust identity provider, replacing the hollow demo login.
+All API endpoints now validate JWT tokens from Clerk before processing requests.
+
+FRONTEND
+- src/main.jsx: Wrapped App with ClerkProvider
+    • Configured with VITE_CLERK_PUBLISHABLE_KEY from environment
+    • Authorized parties whitelist includes localhost (dev) and opes.vercel.app (production)
+    • afterSignOutUrl redirects to home after logout
+
+- src/App.jsx: Integrated Clerk components
+    • Show "signed-out": Replaced custom Login component with Clerk's SignIn component
+      with styled appearance (gold border, dark theme matching brand colors)
+    • Show "signed-in": Main app UI with UserButton in header for profile/logout
+    • useUser hook: Access authenticated user info
+    • useAuth hook: Get JWT token via getToken() for backend requests
+    • setTokenGetter: Passes token getter function to API services (analyze, topStocks)
+
+BACKEND
+- api/utils/security.py: Added Clerk JWT validation middleware
+    • _build_allowed_origins(): Constructs CORS allowlist from _PRODUCTION_ORIGINS
+    • validate_clerk_token(request): Validates JWT in Authorization header
+    • Extracts & returns `sub` (user_id) from verified token payload
+    • Handles missing token, malformed header, invalid/expired tokens with appropriate errors
+    • CLERK_PUBLISHABLE_KEY environment variable for key fetching (optional, uses default if missing)
+
+- api/analyze.py & api/topstocks.py: Protected endpoints
+    • Call validate_clerk_token(request) before processing analysis
+    • Returns 401 Unauthorized if token validation fails
+    • User ID from token available for future audit logging / per-user caching
+
+TOKEN FLOW
+User signs in via Clerk → receives JWT → passes via Authorization header in API requests
+→ backend validates signature & expiry → processes request with user context
+
+
 04/03/26 SESSION UPDATES
 ===============
 
@@ -50,7 +136,7 @@ ACCESSIBILITY
 HEADER REDESIGN
 - src/App.jsx + src/App.css: Collapsed the 3-row centered header (logo+signout /
   welcome text / nav tabs) into a single 56px sticky bar:
-    [📊 FinAssist]   [Analyze] [Top 5 Buys] [Portfolio]   [Username · Sign Out]
+    [📊 Opes]   [Analyze] [Top 5 Buys] [Portfolio]   [Username · Sign Out]
   Added `position: sticky`, `backdrop-filter: blur(16px)`, and a bottom border.
   Removed "Welcome back, {name}" row — name is now inline in the header.
 

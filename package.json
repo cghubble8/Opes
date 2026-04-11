@@ -1,5 +1,5 @@
 {
-  "name": "finassist-v2",
+  "name": "opes",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/react": "^5.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.5.1"

@@ -29,7 +29,7 @@ function Login({ onLogin }) {
         setLoading(true)
         await new Promise(resolve => setTimeout(resolve, 800))
         setLoading(false)
-        onLogin({ email: 'demo@finassist.com', name: 'Demo User' })
+        onLogin({ email: 'demo@opes.com', name: 'Demo User' })
     }
 
     return (
@@ -38,7 +38,7 @@ function Login({ onLogin }) {
                 {/* Logo */}
                 <div className="login-header">
                     <div className="login-logo">
-                        <span className="logo-text">FinAssist</span>
+                        <span className="logo-text">Opes</span>
                     </div>
                     <p className="login-subtitle">AI-Powered Stock Analysis</p>
                 </div>

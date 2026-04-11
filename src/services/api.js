@@ -16,7 +16,12 @@
  *    Cached entries are keyed by symbol + date so stale data auto-expires.
  */
 
+import { setTokenGetter, getAuthHeaders } from './auth';
+
 const API_BASE = '/api';
+
+// Re-export setTokenGetter for backwards compatibility with App.jsx
+export { setTokenGetter };
 
 // ── Client-side input validation ───────────────────────────────────────────
 // Mirrors the server-side regex in api/utils/security.py.
@@ -93,7 +98,9 @@ export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/analyze?symbol=${encodeURIComponent(key)}`);
+        const headers = await getAuthHeaders();
+
+        const response = await fetch(`${API_BASE}/analyze?symbol=${encodeURIComponent(key)}`, { headers });
 
         // Check if response is HTML (error from Vite - API not running)
         const contentType = response.headers.get('content-type');
@@ -104,6 +111,9 @@ export async function analyzeStock(symbol, { forceRefresh = false } = {}) {
         const data = await response.json();
 
         if (!response.ok) {
+            if (response.status === 401) {
+                throw new Error('Session expired. Please sign in again.');
+            }
             throw new Error(data.error || 'Failed to analyze stock');
         }
 

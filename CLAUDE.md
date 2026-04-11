@@ -15,7 +15,7 @@ See `Docs/start_dev_server.txt` for the dev setup.
 
 ## Architecture
 
-**FinAssist-V2** is a stock analysis app — React 19 SPA frontend + Python serverless backend deployed on Vercel.
+**Opes** is a stock analysis app — React 19 SPA frontend + Python serverless backend deployed on Vercel.
 
 ### Frontend (`src/`)
 

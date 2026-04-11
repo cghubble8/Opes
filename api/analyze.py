@@ -57,6 +57,7 @@ from utils.security import (
     sanitize_error,
     get_security_headers,
     get_cors_preflight_headers,
+    verify_clerk_jwt,
 )
 
 # ── API Configuration ─────────────────────────────────────────────────────────
@@ -652,6 +653,18 @@ class handler(BaseHTTPRequestHandler):
         # Extract the Origin header for CORS validation
         request_origin = self.headers.get("Origin")
         sec_headers    = get_security_headers(request_origin)
+
+        # ── JWT AUTHENTICATION ──────────────────────────────────────────────
+        # Verify Clerk JWT token from Authorization header before processing
+        auth_header = self.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            self._respond(401, {"error": sanitize_error(401)}, sec_headers)
+            return
+        try:
+            verify_clerk_jwt(auth_header[7:])  # strip "Bearer " prefix
+        except ValueError:
+            self._respond(401, {"error": sanitize_error(401)}, sec_headers)
+            return
 
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
