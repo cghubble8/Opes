@@ -60,6 +60,7 @@ import os
 import jwt
 import json
 import time
+import base64
 from urllib.request import urlopen
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
@@ -204,11 +205,45 @@ _JWKS_CACHE = {"keys": None, "fetched_at": 0.0}
 _JWKS_TTL = 3600  # 1 hour
 
 
+def _derive_jwks_url_from_publishable_key() -> str | None:
+    """
+    Derive the Clerk JWKS URL from the publishable key when CLERK_JWKS_URL is
+    not explicitly set. Clerk publishable keys encode the frontend API domain:
+      pk_live_<base64url(domain$)>  or  pk_test_<base64url(domain$)>
+    Decoding the suffix yields the domain (e.g. clerk.example.com or
+    prepared-cobra-68.clerk.accounts.dev). The JWKS endpoint is always
+    https://<domain>/.well-known/jwks.json.
+    """
+    pub_key = (os.environ.get("VITE_CLERK_PUBLISHABLE_KEY") or
+               os.environ.get("CLERK_PUBLISHABLE_KEY"))
+    if not pub_key:
+        return None
+    try:
+        # Strip the "pk_live_" or "pk_test_" prefix to get the base64 payload
+        b64_part = pub_key.split("_", 2)[-1]
+        # Base64url decode (add padding as needed)
+        padding = (4 - len(b64_part) % 4) % 4
+        domain = base64.b64decode(b64_part + "=" * padding).decode().rstrip("$")
+        jwks_url = f"https://{domain}/.well-known/jwks.json"
+        print(f"[AUTH] Derived JWKS URL from publishable key: {jwks_url}")
+        return jwks_url
+    except Exception as e:
+        print(f"[AUTH] Failed to derive JWKS URL from publishable key: {e}")
+        return None
+
+
 def _fetch_jwks() -> dict:
-    """Fetch Clerk's JWKS from the configured URL. Uses module-level cache."""
-    jwks_url = os.environ.get("CLERK_JWKS_URL")
+    """
+    Fetch Clerk's JWKS. Uses CLERK_JWKS_URL if set; otherwise derives the
+    URL automatically from VITE_CLERK_PUBLISHABLE_KEY / CLERK_PUBLISHABLE_KEY.
+    Results are cached for _JWKS_TTL seconds.
+    """
+    jwks_url = os.environ.get("CLERK_JWKS_URL") or _derive_jwks_url_from_publishable_key()
     if not jwks_url:
-        raise ValueError("CLERK_JWKS_URL environment variable is not set")
+        raise ValueError(
+            "Cannot locate Clerk JWKS endpoint. Set CLERK_JWKS_URL or "
+            "VITE_CLERK_PUBLISHABLE_KEY in your Vercel environment variables."
+        )
 
     now = time.time()
     # Return cached JWKS if still valid
