@@ -18,18 +18,6 @@ export function setTokenGetter(fn) {
  * Returns { Authorization: 'Bearer <token>' } if available, or {} if not signed in.
  */
 export async function getAuthHeaders() {
-  if (!_getToken) {
-    console.warn('[AUTH] Token getter not wired up — setTokenGetter() was never called');
-    return {};
-  }
-  try {
-    const token = await _getToken();
-    if (!token) {
-      console.warn('[AUTH] getToken() returned null — Clerk session may not be ready');
-    }
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch (err) {
-    console.error('[AUTH] getToken() threw:', err);
-    return {};
-  }
+  const token = _getToken ? await _getToken() : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
