@@ -1,0 +1,126 @@
+OPES — 401 AUTH DEBUGGING GUIDE
+================================
+All endpoints (/api/topstocks, /api/screener, /api/analyze) returning 401.
+CLERK_JWKS_URL is set in Vercel and the code is deployed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — READ THE VERCEL FUNCTION LOGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The Python handlers print the real error to stdout, which Vercel captures.
+
+1. Go to https://vercel.com → your Opes project → "Functions" tab
+2. Click on api/topstocks.py (or screener.py)
+3. Look for "[INTERNAL ERROR 401]" lines — they show the exact exception
+
+Likely messages and what they mean:
+  "CLERK_JWKS_URL not set..."         → env var not picked up (stale deploy)
+  "Failed to fetch JWKS: ..."         → network error reaching clerk.accounts.dev
+  "Key <kid> not found in JWKS"       → token signed by a different Clerk instance
+  "Token has expired"                 → token is expired before reaching backend
+  "Invalid token signature"           → JWKS keys don't match the token's issuer
+  "Token authorized party mismatch"   → CLERK_AUTHORIZED_PARTY env var is set
+                                        but doesn't match the frontend origin
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 — CONFIRM THE JWT IS ACTUALLY BEING SENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Open DevTools → Network tab → find a failing /api/topstocks request.
+Click it → Headers → Request Headers.
+
+Look for:  Authorization: Bearer eyJ...
+
+If the Authorization header is MISSING:
+  → getToken() is returning null
+  → Clerk session is not established when the request fires
+  → The useEffect in App.jsx that calls setTokenGetter() may not have run yet
+  → Fix: ensure TopStocks fetch only fires after the token getter is wired up
+
+If the Authorization header IS present:
+  → The frontend is doing its job; the problem is purely backend verification
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3 — VERIFY THE JWKS ENDPOINT IS REACHABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Open a browser and visit:
+  https://destined-civet-74.clerk.accounts.dev/.well-known/jwks.json
+
+You should see JSON with a "keys" array containing RSA public keys.
+If you get a 404 or error → the Clerk instance domain is wrong.
+
+To re-derive the correct domain from your publishable key, run:
+  python3 -c "
+  import base64
+  key = 'YOUR_VITE_CLERK_PUBLISHABLE_KEY'
+  b64 = key.split('_', 2)[-1]
+  domain = base64.b64decode(b64 + '=' * ((4 - len(b64) % 4) % 4)).decode().rstrip('\$')
+  print(f'JWKS URL: https://{domain}/.well-known/jwks.json')
+  "
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4 — DECODE THE JWT AND COMPARE TO JWKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Copy the Bearer token from the Authorization header (Step 2).
+Go to https://jwt.io and paste it in.
+
+Check:
+  Header:  "kid" value (key ID)
+  Payload: "iss" (issuer domain), "azp" (authorized party), "exp" (expiry)
+
+The "kid" in the token header MUST match one of the "kid" values in the
+JWKS response from Step 3. If they don't match, the token was issued by
+a different Clerk instance than what CLERK_JWKS_URL points to.
+
+The "iss" field will look like:
+  https://destined-civet-74.clerk.accounts.dev  (for dev keys)
+  https://clerk.yourdomain.com                   (for prod keys)
+
+This must match the domain in CLERK_JWKS_URL.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5 — TEST THE ENDPOINT DIRECTLY WITH CURL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Get a live token from the browser (copy from Network tab, Step 2), then:
+
+  curl -H "Authorization: Bearer <token>" https://opes.vercel.app/api/topstocks
+
+Expected: JSON response with stock data
+Got 401:  Check Vercel logs (Step 1) for the exact error message
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 6 — CHECK FOR CLERK_AUTHORIZED_PARTY MISMATCH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+In Vercel → Settings → Environment Variables, check if CLERK_AUTHORIZED_PARTY
+is set. If it is, the "azp" claim in the JWT (usually the frontend origin URL
+like "https://opes.vercel.app") must match it exactly.
+
+If the value is wrong or the domain changed, either:
+  - Update CLERK_AUTHORIZED_PARTY to match the "azp" in the JWT (from Step 4)
+  - Or delete CLERK_AUTHORIZED_PARTY to disable the check
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 7 — NUCLEAR OPTION: ADD TEMPORARY BYPASS LOGGING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If Vercel logs still don't show enough detail, temporarily add logging to
+api/utils/security.py in verify_clerk_jwt() to surface the exact failure:
+
+  try:
+      unverified_header = jwt.get_unverified_header(token)
+      print(f"[AUTH DEBUG] kid={unverified_header.get('kid')}")
+      print(f"[AUTH DEBUG] CLERK_JWKS_URL={os.environ.get('CLERK_JWKS_URL')}")
+      jwks = _fetch_jwks()
+      print(f"[AUTH DEBUG] JWKS kids={[k.get('kid') for k in jwks.get('keys', [])]}")
+      ...
+
+Deploy, reproduce the error, read the Vercel logs, then remove the logging.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KNOWN HISTORY OF THIS BUG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Root cause identified: CLERK_JWKS_URL was not set in Vercel env vars
+- Fix deployed: commit 7776035 (auto-derives JWKS URL from publishable key)
+- CLERK_JWKS_URL subsequently added to Vercel dashboard
+- 401 persists → next most likely cause is Step 1 (read actual Vercel logs)
+  or Step 4 (kid mismatch between token and JWKS keys)
+
+The single most useful action is Step 1: read the Vercel function log for
+the exact "[INTERNAL ERROR 401]" line. Everything else is guessing.
