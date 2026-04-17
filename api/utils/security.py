@@ -70,7 +70,7 @@ from urllib.request import urlopen
 # domain and localhost for dev. Preview deployments run on the same Vercel
 # project domain, so they do not need a separate origin.
 _PRODUCTION_ORIGINS = [
-    "https://opes.vercel.app",       # production domain
+    "https://finopes.vercel.app",     # production domain
 ]
 
 def _build_allowed_origins():

@@ -14,7 +14,7 @@ if (!PUBLISHABLE_KEY) {
 // This is a frontend SDK hint only; backend CORS enforcement in security.py is the actual security boundary.
 const authorizedParties = [
   'http://localhost:5173',     // Vite dev server
-  'https://opes.vercel.app',   // production domain
+  'https://finopes.vercel.app',   // production domain
 ]
 
 createRoot(document.getElementById('root')).render(
