@@ -657,6 +657,7 @@ class handler(BaseHTTPRequestHandler):
         # ── JWT AUTHENTICATION ──────────────────────────────────────────────
         # Verify Clerk JWT token from Authorization header before processing
         auth_header = self.headers.get("Authorization", "")
+        print(f"[AUTH DEBUG] Authorization header present: {bool(auth_header)}, length: {len(auth_header)}, starts_with_bearer: {auth_header.startswith('Bearer ')}")
         if not auth_header.startswith("Bearer "):
             self._respond(401, {"error": sanitize_error(401)}, sec_headers)
             return
