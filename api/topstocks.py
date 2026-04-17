@@ -48,6 +48,7 @@ from utils.scoring import (
     compute_fundamentals_score,
     compute_momentum_score,
     compute_quality_score,
+    compute_news_sentiment_score,
     build_key_factors,
 )
 from utils.security import (
@@ -62,6 +63,7 @@ from utils.security import (
 # ── API Configuration ─────────────────────────────────────────────────────────
 YF_CHART_URL   = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 YF_SUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+YF_NEWS_URL    = "https://query2.finance.yahoo.com/v1/finance/search"
 
 # Standard browser User-Agent required by Yahoo Finance to avoid rate-limiting.
 YF_HEADERS = {
@@ -72,27 +74,8 @@ YF_HEADERS = {
     )
 }
 
-# Hardcoded server-side watchlist — never derived from request input.
-WATCHLIST = [
-    {"symbol": "NVDA",  "sector": "Technology"},
-    {"symbol": "META",  "sector": "Technology"},
-    {"symbol": "AMZN",  "sector": "Consumer Cyclical"},
-    {"symbol": "AAPL",  "sector": "Technology"},
-    {"symbol": "GOOGL", "sector": "Technology"},
-    {"symbol": "MSFT",  "sector": "Technology"},
-    {"symbol": "TSLA",  "sector": "Consumer Cyclical"},
-    {"symbol": "AMD",   "sector": "Technology"},
-    {"symbol": "NFLX",  "sector": "Communication Services"},
-    {"symbol": "CRM",   "sector": "Technology"},
-    {"symbol": "AVGO",  "sector": "Technology"},
-    {"symbol": "JPM",   "sector": "Financial"},
-    {"symbol": "WMT",   "sector": "Consumer Defensive"},
-    {"symbol": "UNH",   "sector": "Healthcare"},
-    {"symbol": "V",     "sector": "Financial"},
-    {"symbol": "XOM",   "sector": "Energy"},
-    {"symbol": "MA",    "sector": "Financial"},
-    {"symbol": "COST",  "sector": "Consumer Cyclical"},
-]
+# Shared 36-stock watchlist — single source of truth in api/utils/watchlist.py
+from utils.watchlist import WATCHLIST
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
@@ -254,6 +237,22 @@ def get_fundamentals(symbol, crumb=None, cookies=None):
     except Exception as e:
         print(f"[get_fundamentals:{symbol}] {type(e).__name__}: {e}")
         return {}
+
+
+def get_news(symbol):
+    """Fetch up to 10 recent news headlines for a symbol from Yahoo Finance search."""
+    try:
+        params = {
+            "q": symbol,
+            "newsCount": "10",
+            "enableFuzzyQuery": "false",
+            "enableCb": "false",
+        }
+        response = requests.get(YF_NEWS_URL, params=params, headers=YF_HEADERS, timeout=10)
+        return [item["title"] for item in response.json().get("news", []) if item.get("title")]
+    except Exception as e:
+        print(f"[get_news:{symbol}] {type(e).__name__}: {e}")
+        return []
 
 
 # ── SCORING ───────────────────────────────────────────────────────────────────
@@ -612,6 +611,26 @@ class handler(BaseHTTPRequestHandler):
                             "rate_limited":  fund.get("rate_limited", False),
                         } if fund else None,
                     })
+
+            # ── Step 4: Fetch news for top 5 only (limits to 5 extra API calls) ──
+            top_5_symbols = [s["symbol"] for s in top_5]
+            news_results = {}
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                future_to_sym = {ex.submit(get_news, sym): sym for sym in top_5_symbols}
+                for future in as_completed(future_to_sym):
+                    sym = future_to_sym[future]
+                    try:
+                        headlines = future.result()
+                        news_results[sym] = {
+                            "score":     round(compute_news_sentiment_score(headlines), 1)
+                                         if headlines else None,
+                            "headlines": headlines[:3],
+                        }
+                    except Exception:
+                        news_results[sym] = None
+
+            for stock in top_5:
+                stock["news"] = news_results.get(stock["symbol"])
 
             self._respond(200, {"stocks": top_5}, sec_headers)
 

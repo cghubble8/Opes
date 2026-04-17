@@ -8,6 +8,7 @@ import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
 import Budget from './components/Budget'
+import CompareView from './components/CompareView'
 import './App.css'
 
 const indicatorDefs = {
@@ -38,6 +39,8 @@ function App() {
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
   const [currentView, setCurrentView] = useState('analyze') // 'analyze', 'topstocks', 'portfolio', or 'budget'
+  const [compareOpen, setCompareOpen] = useState(false)
+  const [compareData, setCompareData] = useState({}) // keyed by symbol
 
   // Wire token getter into services
   useEffect(() => {
@@ -74,6 +77,24 @@ function App() {
       .then(result => setData(result))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }
+
+  const handleAddCompare = async (sym) => {
+    if (!sym || compareData[sym]) return
+    try {
+      const result = await analyzeStock(sym)
+      setCompareData(prev => ({ ...prev, [sym]: result }))
+    } catch (err) {
+      console.error('Compare fetch failed:', err.message)
+    }
+  }
+
+  const handleRemoveCompare = (sym) => {
+    setCompareData(prev => {
+      const next = { ...prev }
+      delete next[sym]
+      return next
+    })
   }
 
   // Format large numbers
@@ -251,8 +272,25 @@ function App() {
                   <div className={`price-change ${data.quote?.change >= 0 ? 'positive' : 'negative'}`}>
                     {data.quote?.change >= 0 ? '▲' : '▼'} ${Math.abs(data.quote?.change || 0).toFixed(2)} ({data.quote?.change_percent}%)
                   </div>
+                  <button
+                    className="btn-compare"
+                    onClick={() => setCompareOpen(o => !o)}
+                    title="Compare with other stocks"
+                  >
+                    {compareOpen ? 'Close Compare' : 'Compare'}
+                  </button>
                 </div>
               </div>
+
+              {/* Earnings Banner */}
+              {data.earnings && (
+                <div className={`earnings-banner ${data.earnings.days_until <= 7 ? 'earnings-warning' : 'earnings-info'}`}>
+                  {data.earnings.days_until <= 7
+                    ? `⚠ Earnings in ${data.earnings.days_until} day${data.earnings.days_until !== 1 ? 's' : ''} (${data.earnings.date}) — high volatility risk.`
+                    : `Earnings: ${data.earnings.date} (in ${data.earnings.days_until} days)`
+                  }
+                </div>
+              )}
 
               {/* Technical Indicators Grid */}
               <div className="indicators-grid">
@@ -467,7 +505,25 @@ function App() {
                       <span className="pillar-label">Momentum</span>
                       <span className="pillar-value">{data.prediction?.momentum_score?.toFixed(1)}</span>
                     </div>
+                    {data.prediction?.news_score != null && (
+                      <div className="pillar-row">
+                        <span className="pillar-label">News Sentiment</span>
+                        <span className="pillar-value">{data.news?.label || data.prediction.news_score.toFixed(1)}</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* News Headlines */}
+                  {data.news?.headlines?.length > 0 && (
+                    <div className="news-headlines">
+                      <h4 className="key-factors-title">Recent News</h4>
+                      <ul className="news-list">
+                        {data.news.headlines.map((h, i) => (
+                          <li key={i} className="news-item">{h}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   {data.prediction?.key_factors && (
                     (data.prediction.key_factors.bullish?.length > 0 || data.prediction.key_factors.bearish?.length > 0) && (
@@ -519,6 +575,17 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Compare Panel */}
+              {compareOpen && (
+                <CompareView
+                  primaryData={data}
+                  compareData={compareData}
+                  onAdd={handleAddCompare}
+                  onRemove={handleRemoveCompare}
+                  formatNumber={formatNumber}
+                />
+              )}
             </div>
           )}
         </>

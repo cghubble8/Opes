@@ -72,54 +72,8 @@ YF_HEADERS = {
 
 ALLOWED_DIRECTIONS = {"any", "bullish", "bearish"}
 
-# Expanded 36-stock watchlist — superset of topstocks.py WATCHLIST.
-# topstocks.py is intentionally unchanged; this is an independent constant.
-SCREENER_WATCHLIST = [
-    # Original 18
-    {"symbol": "NVDA",  "sector": "Technology"},
-    {"symbol": "META",  "sector": "Technology"},
-    {"symbol": "AMZN",  "sector": "Consumer Cyclical"},
-    {"symbol": "AAPL",  "sector": "Technology"},
-    {"symbol": "GOOGL", "sector": "Technology"},
-    {"symbol": "MSFT",  "sector": "Technology"},
-    {"symbol": "TSLA",  "sector": "Consumer Cyclical"},
-    {"symbol": "AMD",   "sector": "Technology"},
-    {"symbol": "NFLX",  "sector": "Communication Services"},
-    {"symbol": "CRM",   "sector": "Technology"},
-    {"symbol": "AVGO",  "sector": "Technology"},
-    {"symbol": "JPM",   "sector": "Financial"},
-    {"symbol": "WMT",   "sector": "Consumer Defensive"},
-    {"symbol": "UNH",   "sector": "Healthcare"},
-    {"symbol": "V",     "sector": "Financial"},
-    {"symbol": "XOM",   "sector": "Energy"},
-    {"symbol": "MA",    "sector": "Financial"},
-    {"symbol": "COST",  "sector": "Consumer Cyclical"},
-    # Additions — Healthcare
-    {"symbol": "LLY",   "sector": "Healthcare"},
-    {"symbol": "ABBV",  "sector": "Healthcare"},
-    {"symbol": "JNJ",   "sector": "Healthcare"},
-    {"symbol": "PFE",   "sector": "Healthcare"},
-    # Additions — Industrials
-    {"symbol": "CAT",   "sector": "Industrials"},
-    {"symbol": "HON",   "sector": "Industrials"},
-    {"symbol": "RTX",   "sector": "Industrials"},
-    {"symbol": "DE",    "sector": "Industrials"},
-    # Additions — Energy
-    {"symbol": "CVX",   "sector": "Energy"},
-    {"symbol": "COP",   "sector": "Energy"},
-    # Additions — Financial
-    {"symbol": "GS",    "sector": "Financial"},
-    {"symbol": "BAC",   "sector": "Financial"},
-    {"symbol": "PYPL",  "sector": "Financial"},
-    # Additions — Consumer Defensive
-    {"symbol": "PG",    "sector": "Consumer Defensive"},
-    {"symbol": "KO",    "sector": "Consumer Defensive"},
-    # Additions — Consumer Cyclical
-    {"symbol": "MCD",   "sector": "Consumer Cyclical"},
-    {"symbol": "HD",    "sector": "Consumer Cyclical"},
-    # Additions — Communication Services
-    {"symbol": "DIS",   "sector": "Communication Services"},
-]
+# Shared 36-stock watchlist — single source of truth in api/utils/watchlist.py
+from utils.watchlist import WATCHLIST as SCREENER_WATCHLIST
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────

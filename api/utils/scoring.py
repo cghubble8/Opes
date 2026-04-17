@@ -3,6 +3,26 @@ Shared scoring functions used by both analyze.py and topstocks.py.
 """
 import numpy as np
 
+# Keyword lists for news sentiment scoring (finance-tuned)
+BULLISH_KEYWORDS = {
+    "beat", "beats", "record", "upgrade", "upgraded", "surge", "surges", "surged",
+    "growth", "raised", "profit", "profits", "profitable", "strong", "outperform",
+    "outperforms", "buy", "positive", "wins", "win", "revenue", "expansion",
+    "accelerate", "accelerating", "breakout", "bullish", "rally", "rallies",
+    "rallied", "soar", "soars", "soared", "gain", "gains", "gained", "boost",
+    "boosted", "momentum", "opportunity", "optimistic", "recovery", "rebound",
+}
+
+BEARISH_KEYWORDS = {
+    "miss", "misses", "missed", "downgrade", "downgraded", "lawsuit", "layoffs",
+    "recall", "recalls", "loss", "losses", "decline", "declines", "declined",
+    "cuts", "cut", "weak", "negative", "warning", "warnings", "debt", "investigation",
+    "selloff", "sell-off", "bearish", "plunge", "plunges", "plunged", "drop",
+    "drops", "dropped", "crash", "crashes", "risk", "risks", "concern", "concerns",
+    "disappointing", "disappoints", "disappoint", "hurt", "hurts", "slump",
+    "slumps", "slumped", "volatile", "volatility", "penalty", "fine", "fined",
+}
+
 # Trailing PE medians by sector (2024-2025 market conditions)
 SECTOR_PE_MEDIANS = {
     "Technology":             28,
@@ -136,12 +156,34 @@ def compute_momentum_score(closes):
     return max(0.0, min(100.0, score))
 
 
-def compute_quality_score(ml_confidence, fund_score, momentum_score):
+def compute_news_sentiment_score(headlines):
+    """Score a list of headlines bullish/bearish using keyword matching, returning 0-100.
+    Returns None if no headlines provided.
     """
-    Composite quality score:
-      fundamentals 40% + ML confidence 40% + momentum 20%.
-    If fundamentals are unavailable, redistributes to ML 65% + momentum 35%.
+    if not headlines:
+        return None
+    total = 0.0
+    for headline in headlines:
+        words = set(headline.lower().split())
+        bullish_hits = len(words & BULLISH_KEYWORDS)
+        bearish_hits = len(words & BEARISH_KEYWORDS)
+        # Clamp per-headline net to [-2, 2] to prevent single headlines dominating
+        total += max(-2.0, min(2.0, bullish_hits - bearish_hits))
+    avg = total / len(headlines)
+    return max(0.0, min(100.0, 50.0 + avg * 25.0))
+
+
+def compute_quality_score(ml_confidence, fund_score, momentum_score, news_score=None):
     """
+    Composite quality score (0-100).
+    With news: ML 33% + Fund 33% + Momentum 17% + News 17%.
+    Without news: ML 40% + Fund 40% + Momentum 20% (or ML 65% + Momentum 35% if no fundamentals).
+    """
+    if news_score is not None and fund_score is not None:
+        return round(
+            ml_confidence * 0.33 + fund_score * 0.33 + momentum_score * 0.17 + news_score * 0.17,
+            1,
+        )
     if fund_score is None:
         return round(ml_confidence * 0.65 + momentum_score * 0.35, 1)
     return round(ml_confidence * 0.40 + fund_score * 0.40 + momentum_score * 0.20, 1)

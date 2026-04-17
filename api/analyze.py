@@ -49,6 +49,7 @@ from utils.scoring import (
     compute_fundamentals_score,
     compute_momentum_score,
     compute_quality_score,
+    compute_news_sentiment_score,
     quality_score_to_label,
     build_key_factors,
 )
@@ -64,6 +65,7 @@ from utils.security import (
 # These are public Yahoo Finance endpoints — no API keys required or stored.
 YF_CHART_URL   = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 YF_SUMMARY_URL = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+YF_NEWS_URL    = "https://query2.finance.yahoo.com/v1/finance/search"
 
 # Outbound request headers — required by Yahoo Finance to avoid 429 responses.
 # This is a standard browser User-Agent; no credentials are included.
@@ -231,12 +233,32 @@ def _get_yf_crumb():
         return session, None
 
 
+def get_news(symbol):
+    """Fetch up to 10 recent news headlines for a symbol from Yahoo Finance search."""
+    try:
+        params = {
+            "q": symbol,
+            "newsCount": "10",
+            "enableFuzzyQuery": "false",
+            "enableCb": "false",
+        }
+        response = requests.get(YF_NEWS_URL, params=params, headers=YF_HEADERS, timeout=10)
+        data = response.json()
+        news_items = data.get("news", [])
+        return [item["title"] for item in news_items if item.get("title")]
+    except Exception as e:
+        print(f"[get_news:{symbol}] {type(e).__name__}: {e}")
+        return []
+
+
 def get_company_overview(symbol):
-    """Fetch company fundamentals via Yahoo Finance quoteSummary."""
+    """Fetch company fundamentals and upcoming earnings via Yahoo Finance quoteSummary."""
     try:
         session, crumb = _get_yf_crumb()
         url = YF_SUMMARY_URL.format(symbol=symbol)
-        params = {"modules": "defaultKeyStatistics,financialData,summaryDetail,assetProfile"}
+        params = {
+            "modules": "defaultKeyStatistics,financialData,summaryDetail,assetProfile,calendarEvents"
+        }
         if crumb:
             params["crumb"] = crumb
         response = session.get(url, params=params, headers=YF_HEADERS, timeout=15)
@@ -251,6 +273,23 @@ def get_company_overview(symbol):
         fd = r.get("financialData", {})
         sd = r.get("summaryDetail", {})
         ap = r.get("assetProfile", {})
+        ce = r.get("calendarEvents", {})
+
+        # Extract next earnings date and compute days until
+        earnings = None
+        earnings_dates = safe_get(ce, "earnings", "earningsDate", default=[])
+        if earnings_dates:
+            try:
+                next_date_fmt = earnings_dates[0].get("fmt")
+                if next_date_fmt:
+                    from datetime import date
+                    days_until = (
+                        datetime.strptime(next_date_fmt, "%Y-%m-%d").date() - date.today()
+                    ).days
+                    if days_until >= 0:
+                        earnings = {"date": next_date_fmt, "days_until": days_until}
+            except Exception:
+                pass
 
         return {
             "symbol":         symbol,
@@ -268,6 +307,7 @@ def get_company_overview(symbol):
             "beta":           safe_float(ks.get("beta")),
             "profit_margin":  safe_float(fd.get("profitMargins")),
             "earnings_growth":safe_float(fd.get("earningsGrowth")),
+            "earnings":       earnings,
         }
     except Exception as e:
         print(f"[get_company_overview] {type(e).__name__}: {e}")
@@ -680,15 +720,16 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            # Concurrency cap: exactly 3 workers for the 3 independent I/O calls.
-            # This handler makes one analysis per request so no fan-out risk here.
-            with ThreadPoolExecutor(max_workers=3) as ex:
+            # 4 concurrent I/O calls: prices, fundamentals, quote, news
+            with ThreadPoolExecutor(max_workers=4) as ex:
                 f_prices = ex.submit(get_daily_prices, symbol)
                 f_fund   = ex.submit(get_company_overview, symbol)
                 f_quote  = ex.submit(get_quote, symbol)
+                f_news   = ex.submit(get_news, symbol)
                 prices       = f_prices.result()
                 fundamentals = f_fund.result()
                 quote        = f_quote.result()
+                headlines    = f_news.result()
 
             if "error" in prices:
                 self._respond(400, {"error": prices["error"], "symbol": symbol}, sec_headers)
@@ -701,8 +742,9 @@ class handler(BaseHTTPRequestHandler):
             fund_score     = compute_fundamentals_score(fundamentals)
             closes         = [p["close"] for p in prices["prices"]]
             momentum_score = compute_momentum_score(closes)
+            news_score     = compute_news_sentiment_score(headlines)
             quality_score  = compute_quality_score(
-                prediction["confidence"], fund_score, momentum_score
+                prediction["confidence"], fund_score, momentum_score, news_score
             )
             rating_label   = quality_score_to_label(quality_score, prediction["direction"])
 
@@ -718,6 +760,16 @@ class handler(BaseHTTPRequestHandler):
                 or prices.get("meta", {}).get("name")
                 or symbol
             )
+
+            # Build news sentiment label
+            def _news_label(score):
+                if score is None:
+                    return None
+                if score >= 70:   return "Bullish"
+                if score >= 57:   return "Moderately Bullish"
+                if score >= 43:   return "Neutral"
+                if score >= 30:   return "Moderately Bearish"
+                return "Bearish"
 
             self._respond(200, {
                 "symbol": symbol,
@@ -750,8 +802,15 @@ class handler(BaseHTTPRequestHandler):
                     "quality_score":        quality_score,
                     "fund_score":           round(fund_score, 1) if fund_score is not None else None,
                     "momentum_score":       round(momentum_score, 1),
+                    "news_score":           round(news_score, 1) if news_score is not None else None,
                     "validation_accuracy":  prediction.get("validation_accuracy"),
                 },
+                "news": {
+                    "score":     round(news_score, 1) if news_score is not None else None,
+                    "label":     _news_label(news_score),
+                    "headlines": headlines[:3],
+                } if headlines else None,
+                "earnings": fundamentals.get("earnings"),
                 "chart_data": indicators.get("chart_data", {}),
             }, sec_headers)
 
