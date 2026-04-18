@@ -16,6 +16,11 @@
             "config": { "maxDuration": 55 }
         },
         {
+            "src": "api/macro.py",
+            "use": "@vercel/python",
+            "config": { "maxDuration": 55 }
+        },
+        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -35,6 +40,10 @@
         {
             "src": "/api/screener",
             "dest": "/api/screener.py"
+        },
+        {
+            "src": "/api/macro",
+            "dest": "/api/macro.py"
         },
         {
             "handle": "filesystem"

@@ -10,6 +10,7 @@ ROUTES = {
     '/api/analyze':   'analyze',
     '/api/topstocks': 'topstocks',
     '/api/screener':  'screener',
+    '/api/macro':     'macro',
 }
 
 class DevRouter(BaseHTTPRequestHandler):
@@ -41,5 +42,5 @@ class DevRouter(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     port = 8000
     print(f'API dev server → http://localhost:{port}')
-    print('Routes: /api/analyze  /api/topstocks  /api/screener')
+    print('Routes: /api/analyze  /api/topstocks  /api/screener  /api/macro')
     HTTPServer(('localhost', port), DevRouter).serve_forever()

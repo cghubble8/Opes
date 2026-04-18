@@ -4,11 +4,14 @@ import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, 
 import { analyzeStock, setTokenGetter as setAnalyzeTokenGetter } from './services/api'
 import { setTokenGetter as setTopStocksTokenGetter } from './services/topStocks'
 import { setTokenGetter as setScreenerTokenGetter } from './services/screener'
+import { getMacroData, setTokenGetter as setMacroTokenGetter } from './services/macro'
 import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
 import Portfolio from './components/Portfolio'
 import Budget from './components/Budget'
 import CompareView from './components/CompareView'
+import MarketBanner from './components/MarketBanner'
+import MacroDashboard from './components/MacroDashboard'
 import './App.css'
 
 const indicatorDefs = {
@@ -30,6 +33,37 @@ const indicatorDefs = {
     },
 }
 
+const SECTOR_ETF_MAP = {
+    'Technology':             'XLK',
+    'Financial Services':     'XLF',
+    'Energy':                 'XLE',
+    'Healthcare':             'XLV',
+    'Industrials':            'XLI',
+    'Consumer Cyclical':      'XLY',
+    'Consumer Defensive':     'XLP',
+    'Real Estate':            'XLRE',
+    'Basic Materials':        'XLB',
+    'Utilities':              'XLU',
+    'Communication Services': 'XLC',
+}
+
+function getSectorContextWarning(stockData, macroData) {
+    if (!stockData?.sector || !macroData?.sectors) return null
+    const etfSymbol = SECTOR_ETF_MAP[stockData.sector]
+    if (!etfSymbol) return null
+    const etf = macroData.sectors[etfSymbol]
+    if (!etf) return null
+    const parts = []
+    const rsi = etf.indicators?.rsi
+    if (rsi != null) {
+        if (rsi > 70) parts.push(`RSI ${rsi.toFixed(0)}, Overbought`)
+        else if (rsi < 30) parts.push(`RSI ${rsi.toFixed(0)}, Oversold`)
+    }
+    if (etf.direction === 'bearish') parts.push(`sector trending ${etf.rating || etf.prediction}`)
+    if (parts.length === 0) return null
+    return `${stockData.sector} (${etfSymbol}): ${parts.join(', ')} ⚠`
+}
+
 function App() {
   const { user } = useUser()
   const { getToken } = useAuth()
@@ -38,7 +72,8 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
-  const [currentView, setCurrentView] = useState('analyze') // 'analyze', 'topstocks', 'portfolio', or 'budget'
+  const [currentView, setCurrentView] = useState('market') // 'analyze', 'topstocks', 'portfolio', 'budget', or 'market'
+  const [macroData, setMacroData] = useState(null)
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareData, setCompareData] = useState({}) // keyed by symbol
 
@@ -48,7 +83,13 @@ function App() {
     setAnalyzeTokenGetter(getter)
     setTopStocksTokenGetter(getter)
     setScreenerTokenGetter(getter)
+    setMacroTokenGetter(getter)
   }, [getToken])
+
+  // Pre-fetch macro data on mount so sector warnings are ready when user analyzes a stock
+  useEffect(() => {
+    getMacroData().then(setMacroData).catch(() => {})
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -185,12 +226,26 @@ function App() {
           >
             Budget
           </button>
+          <button
+            className={`nav-tab ${currentView === 'market' ? 'active' : ''}`}
+            onClick={() => setCurrentView('market')}
+          >
+            Market
+          </button>
         </nav>
 
         <div className="header-user">
           <UserButton afterSignOutUrl="/" />
         </div>
       </header>
+
+      {/* Persistent market context strip — visible across all views */}
+      <MarketBanner />
+
+      {/* Market View */}
+      {currentView === 'market' && (
+        <MacroDashboard />
+      )}
 
       {/* Top Stocks View */}
       {currentView === 'topstocks' && (
@@ -291,6 +346,16 @@ function App() {
                   }
                 </div>
               )}
+
+              {/* Sector Context Warning — sourced from macro data */}
+              {(() => {
+                const w = getSectorContextWarning(data, macroData)
+                return w ? (
+                  <div className="earnings-banner earnings-info">
+                    Sector context — {w}
+                  </div>
+                ) : null
+              })()}
 
               {/* Technical Indicators Grid */}
               <div className="indicators-grid">
