@@ -51,6 +51,7 @@ def _normalize_sector(sector):
 def compute_fundamentals_score(fund, sector_medians=None):
     """Score company quality from fundamentals, 0-100. Higher is better.
     sector_medians: optional dict of {sector: median_pe} to override SECTOR_PE_MEDIANS.
+    Accepts free_cash_flow, operating_cash_flow, and market_cap for FCF yield scoring.
     """
     if not fund or "error" in fund:
         return None
@@ -110,13 +111,28 @@ def compute_fundamentals_score(fund, sector_medians=None):
     if fund.get("eps") and fund["eps"] > 0:
         score += 5
 
+    # FCF yield: harder to fake than reported earnings (Sloan accruals anomaly)
+    fcf = fund.get("free_cash_flow")
+    market_cap_val = fund.get("market_cap")
+    if fcf is not None and market_cap_val and market_cap_val > 0:
+        fcf_yield = fcf / market_cap_val
+        if fcf_yield > 0.05:    score += 15
+        elif fcf_yield > 0.02:  score += 8
+        elif fcf_yield < 0:     score -= 12
+
+    # Cash conversion: positive operating CF confirms earnings are real, not accrual-driven
+    ocf = fund.get("operating_cash_flow")
+    if ocf is not None:
+        score += 5 if ocf > 0 else -8
+
     return max(0.0, min(100.0, score))
 
 
-def compute_momentum_score(closes):
+def compute_momentum_score(closes, atr_ratio=None):
     """
     Short-term momentum score 0-100.
     closes: list of close prices, newest first.
+    atr_ratio: optional current ATR ratio (5d/60d); high ratio = expanding volatility regime.
     Includes an overextension penalty when price is outside the Bollinger upper band.
     """
     if not closes or len(closes) < 20:
@@ -152,6 +168,10 @@ def compute_momentum_score(closes):
         elif daily_pct > 0:     score += 5
         elif daily_pct < -1.5:  score -= 10
         elif daily_pct < 0:     score -= 5
+
+    # Expanding volatility regime penalty: momentum signals break down during spikes
+    if atr_ratio is not None and atr_ratio > 2.0:
+        score -= min(15, (atr_ratio - 2.0) * 10)
 
     return max(0.0, min(100.0, score))
 
@@ -239,6 +259,12 @@ def build_key_factors(signals, fundamentals, indicators, direction):
     elif bollinger == "Near Lower Band":
         bullish.append("Price near Bollinger lower band — potential mean-reversion setup")
 
+    obv_div = signals.get("obv_divergence", "") if signals else ""
+    if obv_div == "Bearish":
+        bearish.append("Volume declining as price rises — OBV bearish divergence (distribution signal)")
+    elif obv_div == "Bullish":
+        bullish.append("Volume rising as price falls — OBV bullish divergence (accumulation signal)")
+
     # ── Fundamental signals ──
     fund = fundamentals or {}
     pe = fund.get("pe_ratio")
@@ -269,6 +295,15 @@ def build_key_factors(signals, fundamentals, indicators, direction):
             bullish.append(f"Healthy profit margin of {pm*100:.0f}%")
         elif pm < 0:
             bearish.append("Negative profit margins — profitability concern")
+
+    # Earnings proximity: high uncertainty before binary event
+    earnings = fund.get("earnings")
+    if earnings and isinstance(earnings, dict):
+        days = earnings.get("days_until")
+        if days is not None and days <= 5:
+            bearish.append(f"Earnings in {days} day{'s' if days != 1 else ''} — high uncertainty before binary event")
+        elif days is not None and days <= 14:
+            bearish.append(f"Earnings report in {days} days — expect elevated volatility")
 
     # ── Build reasoning string ──
     parts = []

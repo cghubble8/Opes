@@ -1,0 +1,1349 @@
+================================================================================
+OPES — MAIN APPLICATION DOCUMENTATION
+Teaching Reference for Developers
+================================================================================
+
+Last updated: 2026-04-29
+Author: Generated from codebase review
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+
+  1.  What Is Opes?
+  2.  High-Level Architecture
+  3.  Technology Stack
+  4.  Project File Structure
+  5.  Authentication System (Clerk)
+  6.  Frontend: Views and Navigation
+      6.1  Analyze View
+      6.2  Top 5 Buys View
+      6.3  Portfolio View
+      6.4  Budget View
+      6.5  Market Overview View
+  7.  Frontend: Services Layer
+      7.1  api.js — Stock Analysis Service
+      7.2  topStocks.js — Top Stocks Service
+      7.3  auth.js — Token/Auth Helper
+      7.4  macro.js — Macro Market Service
+      7.5  portfolio.js & budget.js — Local Data Services
+  8.  Backend: Python Serverless Handlers
+      8.1  analyze.py — /api/analyze
+      8.2  topstocks.py — /api/topstocks
+      8.3  macro.py — /api/macro
+      8.4  screener.py — /api/screener
+      8.5  dev_server.py — Local Development Server
+  9.  Shared Backend Utilities
+      9.1  api/utils/scoring.py
+      9.2  api/utils/security.py
+      9.3  api/utils/watchlist.py
+ 10.  Data Fetching: Yahoo Finance
+ 11.  Technical Indicators Explained
+      11.1  SMA (Simple Moving Average)
+      11.2  EMA (Exponential Moving Average)
+      11.3  RSI (Relative Strength Index)
+      11.4  MACD
+      11.5  Bollinger Bands
+      11.6  OBV (On-Balance Volume)
+ 12.  Machine Learning Pipeline
+      12.1  Feature Engineering (12 Features)
+      12.2  Walk-Forward Validation
+      12.3  Model and Confidence
+      12.4  Neutral Band Logic
+ 13.  The 4-Pillar Composite Quality Score
+      13.1  Pillar 1: ML Confidence
+      13.2  Pillar 2: Fundamentals Score
+      13.3  Pillar 3: Momentum Score
+      13.4  Pillar 4: News Sentiment Score
+      13.5  Combining the Pillars
+ 14.  Security Architecture
+      14.1  Input Validation
+      14.2  JWT Authentication
+      14.3  CORS Hardening
+      14.4  Secure Response Headers
+      14.5  Error Sanitization
+      14.6  Thread Pool Caps
+ 15.  Caching Strategy
+ 16.  Deployment (Vercel)
+ 17.  Local Development Setup
+ 18.  Key Design Decisions & Trade-offs
+ 19.  Glossary of Financial Terms Used
+
+================================================================================
+1. WHAT IS OPES?
+================================================================================
+
+Opes is a personal stock analysis web application. The name is Latin for
+"resources" or "wealth." It gives users the ability to:
+
+  - Analyze any publicly traded US stock by symbol.
+  - See technical indicators (RSI, MACD, Bollinger Bands, Moving Averages, OBV).
+  - Get an AI/ML-based buy/sell prediction with confidence.
+  - View fundamentals (P/E ratio, EPS, ROE, market cap, etc.).
+  - See a ranked list of the top 5 buy-rated stocks from a curated watchlist.
+  - Compare two stocks side-by-side.
+  - Monitor their portfolio (mock holdings with sparklines).
+  - Track a personal budget.
+  - View a macro market dashboard with index and sector health data.
+
+The app is designed to be educational — the indicator cards flip over to show
+plain-English explanations of what each metric means.
+
+================================================================================
+2. HIGH-LEVEL ARCHITECTURE
+================================================================================
+
+Opes is a two-tier web application:
+
+  FRONTEND (React 19 SPA)
+  ┌─────────────────────────────────────┐
+  │  Browser — React 19 + Vite          │
+  │  Auth: Clerk (JWT tokens)           │
+  │  Routing: State in App.jsx          │
+  │  Caching: localStorage (daily)      │
+  └────────────────┬────────────────────┘
+                   │  HTTPS (fetch)
+  BACKEND (Python Serverless)
+  ┌─────────────────────────────────────┐
+  │  Vercel Serverless Functions        │
+  │  api/analyze.py                     │
+  │  api/topstocks.py                   │
+  │  api/macro.py                       │
+  │  api/screener.py                    │
+  └────────────────┬────────────────────┘
+                   │  HTTPS (requests)
+  DATA SOURCE
+  ┌─────────────────────────────────────┐
+  │  Yahoo Finance (public, no API key) │
+  │  /v8/finance/chart  — OHLCV prices  │
+  │  /v10/finance/quoteSummary — funds  │
+  │  /v1/finance/search — news          │
+  └─────────────────────────────────────┘
+
+Key characteristics:
+  - The ML model is retrained from scratch on every API request. There is no
+    persistent model storage — Vercel serverless functions are stateless.
+  - All data comes from Yahoo Finance. No API keys or paid data subscriptions
+    are required.
+  - Authentication is handled entirely by Clerk. The Python backend verifies
+    Clerk JWT tokens on every request.
+  - The frontend caches API responses in localStorage keyed by symbol + date,
+    so a user won't trigger redundant API calls within the same trading day.
+
+================================================================================
+3. TECHNOLOGY STACK
+================================================================================
+
+  Frontend:
+    - React 19 (JSX, hooks)
+    - Vite (build tool and dev server)
+    - Recharts (charts: ComposedChart, Line, Area)
+    - Clerk React SDK (@clerk/react) for authentication
+    - Vanilla CSS (no Tailwind or component library)
+
+  Backend:
+    - Python 3.13+
+    - scikit-learn (RandomForestClassifier)
+    - numpy (array math)
+    - requests (HTTP calls to Yahoo Finance)
+    - PyJWT (JWT verification)
+    - http.server.BaseHTTPRequestHandler (Vercel Python runtime interface)
+
+  Deployment:
+    - Vercel (both frontend static files and Python serverless functions)
+    - vercel.json routes /api/*.py → Python runtime
+
+  Authentication:
+    - Clerk (hosted auth service, handles sign-in UI, session tokens, JWKS)
+
+================================================================================
+4. PROJECT FILE STRUCTURE
+================================================================================
+
+  opes/
+  ├── api/                         Python serverless functions
+  │   ├── analyze.py               GET /api/analyze?symbol=X
+  │   ├── topstocks.py             GET /api/topstocks
+  │   ├── macro.py                 GET /api/macro
+  │   ├── screener.py              GET /api/screener
+  │   ├── dev_server.py            Local dev routing (not deployed)
+  │   └── utils/
+  │       ├── __init__.py
+  │       ├── scoring.py           Shared scoring functions
+  │       ├── security.py          Input validation, JWT, CORS, headers
+  │       └── watchlist.py         Hardcoded stock watchlist (36 symbols)
+  ├── src/                         React frontend
+  │   ├── App.jsx                  Root component, state, navigation
+  │   ├── main.jsx                 React entry point (ReactDOM.createRoot)
+  │   ├── App.css                  All styles
+  │   ├── components/
+  │   │   ├── TopStocks.jsx        Top 5 buy-rated stocks view
+  │   │   ├── Portfolio.jsx        Mock portfolio view
+  │   │   ├── Budget.jsx           Budget tracker view
+  │   │   ├── CompareView.jsx      Side-by-side stock comparison
+  │   │   ├── MacroDashboard.jsx   Market overview / macro view
+  │   │   ├── MarketBanner.jsx     Persistent header strip (market data)
+  │   │   ├── StockScreener.jsx    Stock screener component
+  │   │   ├── Login.jsx            (Legacy, replaced by Clerk)
+  │   │   └── CandlestickLoader.jsx  Animated loading indicator
+  │   └── services/
+  │       ├── api.js               /api/analyze caller + cache
+  │       ├── topStocks.js         /api/topstocks caller + cache
+  │       ├── auth.js              Clerk token getter / auth headers
+  │       ├── macro.js             /api/macro caller + cache
+  │       ├── screener.js          /api/screener caller
+  │       ├── portfolio.js         Mock portfolio data (no API)
+  │       └── budget.js            Local budget data (no API)
+  ├── Docs/                        Documentation files
+  ├── public/                      Static assets
+  ├── dist/                        Build output (generated by Vite)
+  ├── vercel.json                  Deployment configuration
+  ├── package.json                 Node dependencies
+  ├── requirements.txt             Python dependencies
+  └── CLAUDE.md                    Instructions for AI coding assistant
+
+================================================================================
+5. AUTHENTICATION SYSTEM (CLERK)
+================================================================================
+
+Opes uses Clerk for authentication, which is a third-party hosted auth service.
+Here is how it works end-to-end:
+
+  HOW THE USER LOGS IN:
+  1. User opens the app. App.jsx wraps everything in Clerk's <Show when="signed-out">
+     and <Show when="signed-in"> components. Signed-out users see the <SignIn />
+     component (Clerk's hosted login UI).
+  2. Clerk handles the email/password check, OAuth, etc. on its servers.
+  3. On success, Clerk issues a short-lived JWT (JSON Web Token) and stores a
+     session in the browser.
+
+  HOW THE FRONTEND SENDS REQUESTS:
+  1. In App.jsx, the useAuth() hook exposes a getToken() function.
+  2. On mount, App.jsx passes getToken() into each service module via
+     setTokenGetter(). This wires Clerk's token into the fetch layer.
+  3. When a service function (e.g. analyzeStock) makes an API call, it first
+     calls getAuthHeaders() from auth.js, which calls getToken() to get a fresh
+     JWT and returns { Authorization: "Bearer <jwt>" }.
+  4. The JWT is attached to every outbound fetch as an Authorization header.
+
+  HOW THE BACKEND VERIFIES THE TOKEN:
+  1. Each API handler (analyze.py, topstocks.py, macro.py) reads the
+     Authorization header. If it doesn't start with "Bearer ", it returns 401.
+  2. It calls verify_clerk_jwt(token) from security.py.
+  3. verify_clerk_jwt():
+     a. Reads the key ID (kid) from the JWT header.
+     b. Fetches Clerk's public key set (JWKS) from Clerk's servers. The URL
+        is derived from the VITE_CLERK_PUBLISHABLE_KEY environment variable.
+        JWKS are cached in memory for 1 hour so we don't fetch on every request.
+     c. Verifies the JWT signature using the matching RSA public key.
+     d. Verifies expiry (exp claim).
+     e. Optionally validates the azp (authorized party) claim.
+  4. On any verification failure, returns 401.
+
+  LOCAL DEV BYPASS:
+  In local development, the VERCEL_ENV environment variable is not set, and
+  CLERK_JWKS_URL is likely not set either. In this case, verify_clerk_jwt()
+  returns a fake "dev-user" payload immediately without contacting Clerk.
+  This makes local development work without needing real Clerk credentials.
+
+================================================================================
+6. FRONTEND: VIEWS AND NAVIGATION
+================================================================================
+
+App.jsx manages all navigation via a single currentView state variable.
+There is no React Router — views are conditionally rendered with simple
+if/else blocks. The header nav renders five tabs: Analyze, Top 5 Buys,
+Portfolio, Budget, and Market.
+
+  const [currentView, setCurrentView] = useState('market')
+
+Clicking a nav tab calls setCurrentView('analyze'), etc. The correct component
+then renders in the main content area.
+
+────────────────────────────────────────────────────────────────────────────────
+6.1  ANALYZE VIEW
+────────────────────────────────────────────────────────────────────────────────
+
+The main feature of the app. User types a stock symbol, presses Analyze,
+and the app fetches analysis data from /api/analyze.
+
+What the user sees after analysis:
+
+  - Stock Header: symbol, company name, sector, current price, day change.
+  - Earnings Banner: if the company has earnings coming up within 14 days,
+    a warning banner appears. Under 7 days shows a red warning; over 7 days
+    shows a blue info banner.
+  - Sector Context Warning: if macro data has loaded and the stock's sector
+    ETF shows bearish signals, a warning banner appears automatically.
+  - Technical Indicators Grid (4 flip cards):
+      RSI(14) — gauge + overbought/oversold signal
+      MACD — value + bullish/bearish signal
+      Moving Averages — trend direction (SMA20 vs SMA50)
+      Bollinger Bands — where price is relative to the bands
+    Each card can be clicked/tapped to flip it over and show a plain-English
+    explanation of what that indicator means.
+  - Price Chart: 60-day Recharts ComposedChart showing:
+      Closing price with gradient fill
+      SMA20 as a yellow line
+      Bollinger upper/lower bands as dashed red/green lines
+  - 4-Pillar Rating Card: shows the composite AI rating (Strong Buy, etc.),
+    quality score bar, breakdown of the four sub-scores, recent news headlines,
+    bullish/bearish key driver factors, and model training accuracy.
+  - Fundamentals: P/E, EPS, ROE, Market Cap, 52-week high/low.
+  - Compare Panel: clicking "Compare" opens CompareView, which lets the user
+    search for a second stock and see them side-by-side.
+
+Quick search chips (AAPL, GOOGL, MSFT, TSLA, AMZN) let the user jump straight
+to analysis without typing.
+
+────────────────────────────────────────────────────────────────────────────────
+6.2  TOP 5 BUYS VIEW
+────────────────────────────────────────────────────────────────────────────────
+
+Rendered by TopStocks.jsx. Shows the top 5 ranked buy-rated stocks from the
+36-stock watchlist (api/utils/watchlist.py).
+
+How the ranking works:
+  1. /api/topstocks runs the full ML + scoring pipeline on all 36 watchlist
+     stocks concurrently.
+  2. Only stocks with a "bullish" ML direction qualify for the primary ranking.
+  3. They are sorted by composite quality score (descending).
+  4. Top 5 are returned. If fewer than 5 bullish stocks exist, the list is
+     padded with the best non-bullish stocks.
+
+Each card shows:
+  - Symbol, company name, sector
+  - Current price and day change
+  - ML prediction text and confidence %
+  - Quality score bar
+  - Key driver factors (bullish/bearish)
+  - Fundamental metrics (P/E, EPS, ROE, profit margin, market cap)
+  - Clicking a card calls onStockSelect() which triggers a full analyze
+    for that symbol and switches to the Analyze view.
+
+A "Refresh" button forces a cache bypass and re-fetches from the API.
+
+────────────────────────────────────────────────────────────────────────────────
+6.3  PORTFOLIO VIEW
+────────────────────────────────────────────────────────────────────────────────
+
+Rendered by Portfolio.jsx. Shows mock holdings — there is no backend, no
+real brokerage integration, and no user data stored anywhere. The holdings
+data lives entirely in src/services/portfolio.js as JavaScript constants.
+
+Each holding card shows:
+  - Symbol, company name, shares held
+  - Current price (fetched live via analyzeStock)
+  - Total value, total cost, profit/loss and P/L %
+  - A sparkline (mini price chart) using recent closing prices
+
+The portfolio is read-only; users cannot edit holdings through the UI.
+
+────────────────────────────────────────────────────────────────────────────────
+6.4  BUDGET VIEW
+────────────────────────────────────────────────────────────────────────────────
+
+Rendered by Budget.jsx. A local-only budget tracker. All data is stored in
+localStorage (via budget.js). There is no backend involvement. Users can add
+income/expense entries and see a summary.
+
+────────────────────────────────────────────────────────────────────────────────
+6.5  MARKET OVERVIEW VIEW
+────────────────────────────────────────────────────────────────────────────────
+
+Rendered by MacroDashboard.jsx, powered by /api/macro. Shows a broad picture
+of market health:
+
+  - Key indices: SPY (S&P 500) and QQQ (Nasdaq 100) with price, change,
+    and ML trend prediction.
+  - VIX (volatility index): current value with a qualitative label
+    (e.g. "Elevated Fear" when VIX > 25).
+  - Sector ETF heatmap: 11 SPDR sector ETFs (XLK, XLF, XLE, etc.) each with
+    direction and quality score shown as color-coded tiles.
+
+MacroDashboard also pre-fetches in the background when the app first loads
+(useEffect in App.jsx). This means sector context warnings on the Analyze
+view can appear immediately, even before the user visits the Market tab.
+
+A persistent MarketBanner component sits below the header on ALL views, showing
+a scrolling strip of live SPY, QQQ, and sector data pulled from macro state.
+
+================================================================================
+7. FRONTEND: SERVICES LAYER
+================================================================================
+
+Each service file is a thin module that handles API calls and caching.
+None of them use React state — they are pure async utility functions.
+
+────────────────────────────────────────────────────────────────────────────────
+7.1  api.js — STOCK ANALYSIS SERVICE
+────────────────────────────────────────────────────────────────────────────────
+
+exports: analyzeStock(symbol, { forceRefresh })
+
+Key behaviors:
+  - Client-side symbol validation: SYMBOL_RE = /^[A-Z]{1,10}(\.[A-Z]{1,2})?$/
+    This mirrors the server-side rule. It runs before any network call,
+    giving instant feedback on bad input. This is a UX guard only — the
+    server validates independently.
+  - Cache check: reads localStorage for key "analyze_v2_<SYMBOL>_<YYYY-MM-DD>".
+    If a hit exists, returns it without fetching.
+  - Cache version: CACHE_VERSION = 2. Entries from older versions are
+    automatically purged by clearStaleCacheEntries() on each cache read.
+  - Network fetch: calls GET /api/analyze?symbol=<ENCODED_SYMBOL> with auth
+    headers. Symbol is URL-encoded (encodeURIComponent) as defence-in-depth.
+  - Stale fallback: if the network request fails, tries to return any same-
+    version localStorage entry for that symbol (even if it's from yesterday).
+    This keeps the app usable when the backend is temporarily down.
+
+────────────────────────────────────────────────────────────────────────────────
+7.2  topStocks.js — TOP STOCKS SERVICE
+────────────────────────────────────────────────────────────────────────────────
+
+exports: getTopStocks({ forceRefresh }), topStocksMockData
+
+Key behaviors:
+  - Cache key: "topstocks_cache" in localStorage, keyed by today's date.
+    One entry is stored (not per-symbol), since the endpoint returns all 5.
+  - Mock fallback: if the API is unavailable (e.g. during local dev without
+    the Python server running), returns topStocksMockData — a hardcoded array
+    of 5 placeholder stock objects. This makes the UI always render something.
+  - Error handling: if fetch fails, checks for any stale cache entry before
+    falling back to mock data.
+
+────────────────────────────────────────────────────────────────────────────────
+7.3  auth.js — TOKEN / AUTH HELPER
+────────────────────────────────────────────────────────────────────────────────
+
+exports: setTokenGetter(fn), getAuthHeaders()
+
+The services need JWT tokens but don't have direct access to Clerk's hooks
+(React hooks only work inside React components). The solution:
+  1. App.jsx (a React component) calls setTokenGetter(() => getToken()) once
+     on mount, storing the Clerk getToken function in a module-level variable.
+  2. All service files call getAuthHeaders() at request time, which internally
+     calls the stored getter to get a fresh token.
+
+This is the standard pattern for exposing Clerk tokens to non-React modules.
+
+────────────────────────────────────────────────────────────────────────────────
+7.4  macro.js — MACRO MARKET SERVICE
+────────────────────────────────────────────────────────────────────────────────
+
+exports: getMacroData(), setTokenGetter
+
+Similar structure to api.js. Calls GET /api/macro. Cached in localStorage
+with a short TTL (same-day cache). Used by both MacroDashboard and the
+sector context warning logic in App.jsx.
+
+────────────────────────────────────────────────────────────────────────────────
+7.5  portfolio.js & budget.js — LOCAL DATA SERVICES
+────────────────────────────────────────────────────────────────────────────────
+
+portfolio.js exports MOCK_HOLDINGS — a static array of position objects.
+budget.js handles localStorage-based budget entries with no backend at all.
+Neither makes any network requests.
+
+================================================================================
+8. BACKEND: PYTHON SERVERLESS HANDLERS
+================================================================================
+
+All backend files in api/ use the same interface: they export a class named
+`handler` that extends http.server.BaseHTTPRequestHandler. Vercel's Python
+runtime calls handler.do_GET() (or do_OPTIONS() for CORS preflight) for each
+request.
+
+Important: Vercel serverless functions are stateless. They spin up cold for
+each request (or reuse a warm instance for a short window). The ML model is
+retrained from scratch on every request. No data persists between calls.
+
+────────────────────────────────────────────────────────────────────────────────
+8.1  analyze.py — GET /api/analyze?symbol=X
+────────────────────────────────────────────────────────────────────────────────
+
+This is the most feature-rich endpoint. Given a stock symbol, it:
+
+  Step 1 — Authentication
+    Verifies the Clerk JWT from the Authorization header via verify_clerk_jwt().
+    Returns 401 if missing or invalid.
+
+  Step 2 — Input Validation
+    Calls validate_symbol() from security.py. Returns 400 on invalid symbol.
+
+  Step 3 — Concurrent I/O (ThreadPoolExecutor, max 5 workers)
+    Spawns 5 threads simultaneously:
+      - get_daily_prices(symbol) — 1-year OHLCV from Yahoo Finance chart API
+      - get_daily_prices("SPY") — SPY closes for relative-strength ML feature
+      - get_company_overview(symbol) — fundamentals from quoteSummary API
+      - get_quote(symbol) — current price/change from 1-minute chart data
+      - get_news(symbol) — up to 10 recent headlines from Yahoo Finance search
+
+    Using threads here is correct because all 5 operations are I/O-bound
+    (they wait on the network). Python's GIL does not hurt I/O-bound threads.
+
+  Step 4 — Technical Indicators (CPU, synchronous)
+    Calls calculate_all_indicators() which computes:
+    SMA20, SMA50, EMA12, EMA26, RSI(14), MACD(12/26/9), Bollinger Bands(20),
+    OBV, and derived signals (overbought/oversold, trend, OBV divergence).
+
+  Step 5 — ML Prediction (CPU, synchronous)
+    Calls train_and_predict() which trains a RandomForestClassifier and
+    returns a direction (bullish/bearish/neutral), confidence %, and
+    walk-forward validation accuracy. See Section 12 for full details.
+
+  Step 6 — Scoring
+    Calls compute_fundamentals_score(), compute_momentum_score(),
+    compute_news_sentiment_score(), and compute_quality_score() to produce
+    the composite 4-pillar rating.
+
+  Step 7 — Response
+    Returns a JSON response with:
+    symbol, name, sector, quote, indicators, signals, fundamentals,
+    prediction (with rating, quality score, sub-scores, key factors),
+    news, earnings, chart_data (60 days for Recharts).
+
+────────────────────────────────────────────────────────────────────────────────
+8.2  topstocks.py — GET /api/topstocks
+────────────────────────────────────────────────────────────────────────────────
+
+Runs the same pipeline as analyze.py, but for all 36 stocks in WATCHLIST
+simultaneously. It is more expensive and uses a staged concurrency strategy:
+
+  Step 1 — Concurrent price fetch (pool capped at MAX_PRICE_WORKERS + 1 = 9)
+    Fetches OHLCV for all 36 watchlist stocks and SPY at once.
+    Uses as_completed() so processing starts as each future resolves.
+
+  Step 2 — Concurrent fundamentals fetch (pool capped at MAX_FUND_WORKERS = 8)
+    Fetches quoteSummary for each stock with price data.
+    One crumb token is obtained upfront and shared across all threads.
+    Each thread creates its own requests.Session (Session is not thread-safe).
+
+  Step 3 — Scoring (CPU, synchronous loop)
+    Computes dynamic sector PE medians from the live fundamentals data.
+    Runs predict_stock() for each stock.
+    Only bullish stocks qualify for the primary ranked list.
+    Sorts by quality score, takes top 5, pads with non-bullish if needed.
+
+  Step 4 — News fetch for top 5 only
+    Fetches headlines only for the 5 selected stocks (limits extra API calls).
+
+  Returns: { "stocks": [...top 5...] }
+
+IMPORTANT: This endpoint is deliberately expensive. Each call trains 36
+Random Forests (plus 3 validation models per stock = up to 144 models total).
+The daily localStorage cache on the frontend prevents repeat calls.
+
+────────────────────────────────────────────────────────────────────────────────
+8.3  macro.py — GET /api/macro
+────────────────────────────────────────────────────────────────────────────────
+
+Fetches SPY, QQQ, VIX, and 11 sector ETFs (XLK, XLF, XLE, XLV, XLI, XLY,
+XLP, XLRE, XLB, XLU, XLC). Runs the same ML + scoring pipeline on each.
+Returns structured market context: index prices, VIX, sector directions.
+
+VIX is fetched separately (URL-encoded as "%5EVIX" for Yahoo Finance).
+The endpoint takes no user-supplied parameters.
+
+────────────────────────────────────────────────────────────────────────────────
+8.4  screener.py — GET /api/screener
+────────────────────────────────────────────────────────────────────────────────
+
+Screens the watchlist with optional query parameters to filter by sector,
+minimum quality score, or direction. Runs the same pipeline as topstocks.py
+but returns all matching results rather than just top 5.
+
+────────────────────────────────────────────────────────────────────────────────
+8.5  dev_server.py — LOCAL DEVELOPMENT SERVER
+────────────────────────────────────────────────────────────────────────────────
+
+A simple Python HTTP server (not deployed to Vercel) that routes:
+  GET /api/analyze  → analyze.handler
+  GET /api/topstocks → topstocks.handler
+  GET /api/macro    → macro.handler
+  GET /api/screener → screener.handler
+
+This lets you run the Python backend locally without Vercel CLI.
+Start with: python api/dev_server.py
+Then run Vite separately: npm run dev
+
+================================================================================
+9. SHARED BACKEND UTILITIES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+9.1  api/utils/scoring.py
+────────────────────────────────────────────────────────────────────────────────
+
+Contains all scoring logic shared between analyze.py and topstocks.py.
+
+  SECTOR_PE_MEDIANS
+    A dictionary of trailing P/E medians by sector (2024-2025 calibrated).
+    Used as a fallback when dynamic sector medians are unavailable.
+    Example: Technology = 28, Financial = 13, Real Estate = 35.
+
+  compute_fundamentals_score(fund, sector_medians=None)
+    Scores a company's fundamentals on a 0-100 scale. Starts at 50.
+    Applies bonuses/penalties for:
+      - PEG ratio (P/E divided by earnings growth %) — best signal of value
+      - Sector-relative P/E (vs median for that sector)
+      - Forward P/E acceleration bonus (forward PE < 85% of trailing PE)
+      - ROE (return on equity): >25% is excellent
+      - Profit margin: >20% earns a bonus
+      - Positive EPS: small bonus
+      - FCF yield (free cash flow / market cap): >5% is very strong
+      - Operating cash flow: positive confirms earnings quality
+    Clamped to [0, 100].
+
+  compute_momentum_score(closes, atr_ratio=None)
+    Scores short-term price momentum on 0-100. Starts at 50.
+    Bonuses for: price above SMA20, SMA5 > SMA20, positive daily change.
+    Penalties for: price below SMA20, overextension above Bollinger upper band,
+    expanding volatility regime (high ATR ratio = choppy/risky market).
+    The overextension penalty prevents recommending stocks that have already
+    run too far too fast.
+
+  compute_news_sentiment_score(headlines)
+    Keyword-based sentiment scoring. Counts bullish words (beat, surge, growth,
+    rally, etc.) and bearish words (miss, downgrade, loss, plunge, etc.) across
+    all headlines. Returns None if no headlines, 0-100 otherwise.
+    Each headline is clamped to [-2, +2] net score to prevent a single
+    dramatic headline from dominating.
+
+  compute_quality_score(ml_confidence, fund_score, momentum_score, news_score)
+    Combines all four pillars into a single 0-100 composite score:
+    - With all four: ML 33% + Fundamentals 33% + Momentum 17% + News 17%
+    - Without news: ML 40% + Fundamentals 40% + Momentum 20%
+    - Without fundamentals: ML 65% + Momentum 35%
+
+  quality_score_to_label(score, direction)
+    Converts a quality score to a human-readable label:
+    bullish:  ≥70 = "Strong Buy", ≥55 = "Moderate Buy", else "Weak Buy"
+    bearish:  ≥70 = "Strong Sell", ≥55 = "Moderate Sell", else "Weak Sell"
+    neutral:  "Neutral / Hold"
+
+  build_key_factors(signals, fundamentals, indicators, direction)
+    Generates human-readable bullish/bearish explanations, e.g.:
+    "RSI at 28 — oversold, potential bounce opportunity"
+    "MACD above signal line — positive momentum crossover"
+    "PEG ratio of 0.85 — undervalued relative to growth"
+    "Earnings in 3 days — high uncertainty before binary event"
+    Returns { "bullish": [...], "bearish": [...], "reasoning": str }.
+
+────────────────────────────────────────────────────────────────────────────────
+9.2  api/utils/security.py
+────────────────────────────────────────────────────────────────────────────────
+
+See Section 14 (Security Architecture) for a detailed breakdown of everything
+in this file. At a high level, it provides:
+  - validate_symbol(): regex whitelist for ticker symbols
+  - sanitize_error(): safe generic error messages for clients
+  - get_security_headers(): CORS + security response headers
+  - verify_clerk_jwt(): JWT verification with Clerk's JWKS
+  - MAX_PRICE_WORKERS, MAX_FUND_WORKERS: thread pool caps
+
+────────────────────────────────────────────────────────────────────────────────
+9.3  api/utils/watchlist.py
+────────────────────────────────────────────────────────────────────────────────
+
+A single constant WATCHLIST — a list of dicts with "symbol" and "sector" keys.
+Currently 36 stocks across 7 sectors:
+  Technology: NVDA, META, AAPL, GOOGL, MSFT, AMD, CRM, AVGO
+  Consumer Cyclical: AMZN, TSLA, COST, MCD, HD
+  Financial: JPM, V, MA, GS, BAC, PYPL
+  Healthcare: UNH, LLY, ABBV, JNJ, PFE
+  Industrials: CAT, HON, RTX, DE
+  Energy: XOM, CVX, COP
+  Consumer Defensive: WMT, PG, KO
+  Communication Services: NFLX, DIS
+
+Both topstocks.py and screener.py import from this file, making it the
+single source of truth for the universe of stocks the app covers.
+
+================================================================================
+10. DATA FETCHING: YAHOO FINANCE
+================================================================================
+
+All market data comes from Yahoo Finance public APIs. No API key is required.
+The only caveat is that Yahoo Finance occasionally requires a "crumb" token
+for the quoteSummary endpoint.
+
+  PRICE DATA (/v8/finance/chart)
+    URL: https://query1.finance.yahoo.com/v8/finance/chart/{symbol}
+    Parameters: range=1y, interval=1d, includePrePost=false
+    Returns: OHLCV arrays (open, high, low, close, volume) with timestamps.
+    Used by: analyze.py, topstocks.py, macro.py, screener.py
+
+  CURRENT QUOTE (same /v8 endpoint with range=1d, interval=1m)
+    Returns the meta object which includes regularMarketPrice, previousClose,
+    regularMarketVolume. Used to show the current price and day change.
+
+  FUNDAMENTALS (/v10/finance/quoteSummary)
+    URL: https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}
+    Modules requested: defaultKeyStatistics, financialData, summaryDetail,
+                       assetProfile, calendarEvents
+    Returns: P/E, forward P/E, EPS, ROE, profit margin, earnings growth,
+             free cash flow, operating cash flow, sector, industry, beta,
+             market cap, dividend yield, 52-week range, upcoming earnings.
+
+  CRUMB TOKEN (required for quoteSummary v10)
+    Yahoo Finance requires a session cookie and crumb parameter for the v10
+    quoteSummary endpoint. The code handles this via _get_yf_crumb():
+    1. Make a GET request to fc.yahoo.com to establish a cookie session.
+    2. Fetch the crumb from /v1/test/getcrumb.
+    3. Pass the crumb as a URL parameter with each quoteSummary call.
+    Without the crumb, quoteSummary returns empty results (no error, just null).
+    In topstocks.py, the crumb is fetched once and shared across all threads
+    (each thread creates its own Session to avoid thread-safety issues).
+
+  NEWS (/v1/finance/search)
+    URL: https://query2.finance.yahoo.com/v1/finance/search
+    Parameters: q=<symbol>, newsCount=10
+    Returns: array of news items with title, publisher, link, etc.
+    Only the title string is used for sentiment analysis.
+
+  USER-AGENT HEADER
+    Yahoo Finance returns 429 (Too Many Requests) without a realistic
+    browser User-Agent. All requests include:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36..."
+    This is standard practice for scraping public financial data.
+
+  TIMEOUTS
+    All requests use timeout=15 seconds to prevent serverless functions from
+    hanging indefinitely on slow Yahoo Finance responses.
+
+================================================================================
+11. TECHNICAL INDICATORS EXPLAINED
+================================================================================
+
+Technical indicators are mathematical calculations applied to price/volume data
+to help identify trends and potential turning points. All are computed from
+the 1-year daily OHLCV data in calculate_all_indicators() in analyze.py.
+
+────────────────────────────────────────────────────────────────────────────────
+11.1  SMA — SIMPLE MOVING AVERAGE
+────────────────────────────────────────────────────────────────────────────────
+
+Definition: The average closing price over the last N days, where each day
+is weighted equally.
+
+  SMA(20) on day i = (close[i] + close[i-1] + ... + close[i-19]) / 20
+
+Usage in Opes:
+  - SMA20 and SMA50 are computed.
+  - If price > SMA20 > SMA50: "Strong Uptrend"
+  - If price > SMA20:         "Uptrend"
+  - If price < SMA20 < SMA50: "Strong Downtrend"
+  - If price < SMA20:         "Downtrend"
+
+The SMA acts as a dynamic support/resistance level. Traders watch for price
+crossing above or below the SMA as entry/exit signals.
+
+────────────────────────────────────────────────────────────────────────────────
+11.2  EMA — EXPONENTIAL MOVING AVERAGE
+────────────────────────────────────────────────────────────────────────────────
+
+Definition: Like SMA but gives more weight to recent prices.
+Multiplier = 2 / (period + 1)
+EMA[i] = (price[i] - EMA[i-1]) * multiplier + EMA[i-1]
+
+Usage in Opes:
+  - EMA12 and EMA26 are computed. They are the inputs for MACD.
+  - Reacts faster to price changes than SMA.
+  - EMA12 is the "fast" line, EMA26 is the "slow" line.
+
+────────────────────────────────────────────────────────────────────────────────
+11.3  RSI — RELATIVE STRENGTH INDEX
+────────────────────────────────────────────────────────────────────────────────
+
+Definition: Measures the magnitude of recent price gains vs losses on a
+0-100 scale. Uses Wilder's smoothed moving average method over 14 periods.
+
+  avg_gain = average of gains over 14 days
+  avg_loss = average of losses over 14 days
+  RS = avg_gain / avg_loss
+  RSI = 100 - (100 / (1 + RS))
+
+Interpretation:
+  - RSI > 70: Overbought — stock may be due for a pullback
+  - RSI < 30: Oversold — stock may be due for a bounce
+  - RSI 30-70: Neutral territory
+
+Usage in Opes:
+  - Displayed as a gauge on the RSI indicator card.
+  - RSI signal fed into build_key_factors() to generate human explanations.
+  - RSI < 35 triggers "oversold, potential bounce" bullish factor.
+  - RSI > 65 triggers "overbought, pullback risk" bearish factor.
+
+────────────────────────────────────────────────────────────────────────────────
+11.4  MACD — MOVING AVERAGE CONVERGENCE DIVERGENCE
+────────────────────────────────────────────────────────────────────────────────
+
+Definition: MACD Line = EMA12 - EMA26
+Signal Line = EMA9 of the MACD Line
+Histogram = MACD Line - Signal Line
+
+Interpretation:
+  - MACD line crossing above signal line = bullish momentum crossover
+  - MACD line crossing below signal line = bearish momentum divergence
+  - Histogram expanding upward = strengthening bullish momentum
+  - Histogram expanding downward = strengthening bearish momentum
+
+Usage in Opes:
+  - MACD line and signal line values shown on the MACD indicator card.
+  - Signal (Bullish/Bearish) shown as a colored badge.
+  - MACD crossover state fed into key factor generation.
+
+────────────────────────────────────────────────────────────────────────────────
+11.5  BOLLINGER BANDS
+────────────────────────────────────────────────────────────────────────────────
+
+Definition:
+  Middle Band = SMA20
+  Upper Band = SMA20 + (2 × standard deviation of closes over 20 days)
+  Lower Band = SMA20 - (2 × standard deviation of closes over 20 days)
+
+Interpretation:
+  - About 95% of price action falls within the bands under normal conditions.
+  - Price near upper band: potentially overextended.
+  - Price near lower band: potentially oversold / mean-reversion opportunity.
+  - Band squeeze (bands narrowing): volatility is contracting, often precedes
+    a significant move in either direction.
+
+Usage in Opes:
+  - Upper and lower bands displayed on the price chart (dashed red/green).
+  - "Near Upper Band" / "Near Lower Band" signals shown on Bollinger card.
+  - Overextension above the upper band triggers a momentum score penalty.
+
+────────────────────────────────────────────────────────────────────────────────
+11.6  OBV — ON-BALANCE VOLUME
+────────────────────────────────────────────────────────────────────────────────
+
+Definition:
+  OBV[0] = volume[0]
+  OBV[i] = OBV[i-1] + volume[i] if close[i] > close[i-1]
+          = OBV[i-1] - volume[i] if close[i] < close[i-1]
+          = OBV[i-1]             if close[i] = close[i-1]
+
+Interpretation: OBV accumulates volume in the direction of price movement.
+Rising OBV means more volume is occurring on up days (buying pressure).
+Falling OBV means more volume on down days (selling pressure).
+
+Divergence detection (used in Opes):
+  - Bearish divergence: price is rising but OBV is falling. Suggests the
+    rally is not backed by volume — institutional distribution may be occurring.
+  - Bullish divergence: price is falling but OBV is rising. Suggests the
+    decline is not backed by volume — accumulation may be occurring.
+
+Usage in Opes:
+  - OBV divergence (Bearish/Bullish/Neutral) computed over 10-bar slopes.
+  - Divergence signals fed into build_key_factors() and ML features.
+  - OBV slope divergence is one of the 12 ML features.
+
+================================================================================
+12. MACHINE LEARNING PIPELINE
+================================================================================
+
+Opes uses a Random Forest Classifier to predict whether a stock's closing
+price will be >0.5% higher 5 trading days from now.
+
+This is a supervised binary classification problem:
+  Label 1 (bullish): 5-day forward return > +0.5%
+  Label 0 (not bullish): 5-day forward return ≤ +0.5%
+
+The model is trained fresh on every API request using 1 year of daily price
+data (~250 days). It is NOT pretrained or stored.
+
+────────────────────────────────────────────────────────────────────────────────
+12.1  FEATURE ENGINEERING (12 FEATURES PER SAMPLE)
+────────────────────────────────────────────────────────────────────────────────
+
+For each day i from day 5 to day (n-5), one feature vector is built:
+
+  Features 1-15 (5-day lookback × 3 values each):
+    For each of the 5 previous days:
+      - Daily return: (close - prev_close) / prev_close
+      - Volume change: (volume - prev_volume) / prev_volume
+      - High-Low range: (high - low) / close
+    This captures recent momentum direction, volume trend, and daily volatility.
+
+  Feature 16 — Price position within 5-day range (0=at low, 1=at high):
+    (close - 5d_low) / (5d_high - 5d_low)
+    Where the price sits within its recent range (similar to %K stochastic).
+
+  Feature 17 — Normalized RSI proxy (0-1):
+    A simplified RSI calculation over 14 lookback days.
+    Captures overbought/oversold momentum state.
+
+  Feature 18 — SMA crossover (0 or 1):
+    1 if SMA10 > SMA20, else 0. Binary golden/death cross signal.
+
+  Feature 19 — Bollinger Band %B (0-1):
+    (close - lower_band) / (upper_band - lower_band)
+    Where price sits within the Bollinger channel.
+
+  Feature 20 — Distance from 52-week high (0+):
+    (high_52w - close) / high_52w
+    0 means at the 52-week high; higher values mean further below.
+
+  Feature 21 — Rate-of-change deceleration:
+    5-day return minus (20-day return / 4)
+    Captures whether recent momentum is accelerating or decelerating
+    relative to the longer trend.
+
+  Feature 22 — OBV slope divergence (tanh-normalized):
+    Compares OBV slope over 10 days to price slope.
+    Positive = volume confirming price direction (Granville signal).
+    Negative = volume contradicting price direction (divergence).
+
+  Feature 23 — ATR volatility regime (0-1, capped):
+    5-day ATR / 60-day ATR, normalized.
+    Low value = volatility contracting (range-bound, consolidating).
+    High value = volatility expanding (trending or news-driven).
+
+  Feature 24 — SPY relative strength (tanh-normalized):
+    63-day stock return minus 63-day SPY return, scaled with tanh.
+    Captures the Jegadeesh-Titman momentum factor: stocks outperforming
+    the market for 3 months tend to continue outperforming.
+
+Total: ~24 raw values per feature vector (15 from the lookback + 9 signals).
+(Note: the 5-day lookback generates 15 values = 5 days × 3 metrics.)
+
+────────────────────────────────────────────────────────────────────────────────
+12.2  WALK-FORWARD VALIDATION
+────────────────────────────────────────────────────────────────────────────────
+
+Walk-forward validation is used instead of random cross-validation because
+financial time series data must not be shuffled — future data cannot be
+used to train the model that predicts it (lookahead bias).
+
+Expanding window, 3 folds:
+  Fold 1: Train on [0:60%], test on [60%:70%]
+  Fold 2: Train on [0:70%], test on [70%:80%]
+  Fold 3: Train on [0:80%], test on [80%:90%]
+
+Each fold trains a lighter model (50 estimators) to keep runtime reasonable.
+The three fold accuracies are averaged to produce validation_accuracy.
+
+A caveat is appended to the reasoning if:
+  validation_accuracy < majority_class_baseline + 5 percentage points
+
+The majority-class baseline is the accuracy you'd get by always predicting
+the most common class (a naive model). If our ML barely beats that, the
+signal quality is poor and we warn the user.
+
+────────────────────────────────────────────────────────────────────────────────
+12.3  MODEL AND CONFIDENCE
+────────────────────────────────────────────────────────────────────────────────
+
+Final model: RandomForestClassifier(n_estimators=100, max_depth=5,
+                                    min_samples_split=5, class_weight="balanced")
+
+  - n_estimators=100: 100 decision trees. More trees = more stable predictions.
+  - max_depth=5: Trees cannot grow too deep, preventing overfitting.
+  - min_samples_split=5: A node must have at least 5 samples to split further.
+  - class_weight="balanced": Adjusts for class imbalance. If 60% of days show
+    gains, the model shouldn't just always predict "up" to be 60% accurate.
+  - random_state=42: Deterministic results for reproducibility.
+
+The model is trained on all data except the last sample. The last sample
+(most recent day) is the prediction target.
+
+  pred = model.predict(last_sample)[0]       → 0 or 1
+  proba = model.predict_proba(last_sample)[0] → [prob_0, prob_1]
+  conf = max(proba)                           → confidence in the prediction
+
+────────────────────────────────────────────────────────────────────────────────
+12.4  NEUTRAL BAND LOGIC
+────────────────────────────────────────────────────────────────────────────────
+
+If 0.45 ≤ conf ≤ 0.55: the model is nearly 50/50 on direction. Rather than
+outputting a low-confidence Buy or Sell that could mislead users, the app
+returns "Neutral / Hold" with direction = "neutral".
+
+Neutral stocks are excluded from the Top 5 ranking in topstocks.py. The
+analyze endpoint still shows all information, including the neutral rating.
+
+Confidence thresholds for directional signals:
+  conf > 0.70: "Strong Buy Signal" / "Strong Sell Signal"
+  conf > 0.55: "Moderate Buy Signal" / "Moderate Sell Signal"
+  else:        "Weak Buy Signal" / "Weak Sell Signal"
+
+================================================================================
+13. THE 4-PILLAR COMPOSITE QUALITY SCORE
+================================================================================
+
+The quality score (0-100) aggregates four independent signals into a single
+number. The goal is to rank stocks by overall attractiveness, not just ML
+confidence alone.
+
+────────────────────────────────────────────────────────────────────────────────
+13.1  PILLAR 1: ML CONFIDENCE (input: 0-100)
+────────────────────────────────────────────────────────────────────────────────
+
+Directly from the Random Forest's predict_proba() output, scaled to 0-100.
+A 90% confident bullish prediction scores 90 here. This pillar measures
+the technical/momentum edge from pattern recognition.
+
+────────────────────────────────────────────────────────────────────────────────
+13.2  PILLAR 2: FUNDAMENTALS SCORE (0-100)
+────────────────────────────────────────────────────────────────────────────────
+
+From compute_fundamentals_score(). Starts at 50, adjusted up or down based on
+valuation (PEG or sector-relative P/E), capital efficiency (ROE), profitability
+(margin, EPS), and cash flow quality (FCF yield, operating cash flow).
+
+A high fundamentals score means the company is financially healthy and
+reasonably valued. None is returned if no fundamental data is available
+(e.g. for ETFs), in which case the scoring formula drops to 2-pillar mode.
+
+────────────────────────────────────────────────────────────────────────────────
+13.3  PILLAR 3: MOMENTUM SCORE (0-100)
+────────────────────────────────────────────────────────────────────────────────
+
+From compute_momentum_score(). Starts at 50. Based on price position relative
+to SMA20, SMA5 vs SMA20 crossover, daily price change, Bollinger overextension,
+and ATR volatility regime.
+
+This pillar is purely price/volume based, focused on short-term momentum.
+
+────────────────────────────────────────────────────────────────────────────────
+13.4  PILLAR 4: NEWS SENTIMENT SCORE (0-100)
+────────────────────────────────────────────────────────────────────────────────
+
+From compute_news_sentiment_score(). Returns None if no headlines.
+Uses keyword matching against curated bullish/bearish vocabulary lists.
+
+When available, this pillar captures recent catalysts (earnings beats,
+upgrades, lawsuits, layoffs) that the other three pillars won't detect
+until the price reacts. "News leads price" in many cases.
+
+────────────────────────────────────────────────────────────────────────────────
+13.5  COMBINING THE PILLARS
+────────────────────────────────────────────────────────────────────────────────
+
+  If all 4 pillars available:
+    quality = ML × 0.33 + Fundamentals × 0.33 + Momentum × 0.17 + News × 0.17
+
+  If news unavailable:
+    quality = ML × 0.40 + Fundamentals × 0.40 + Momentum × 0.20
+
+  If neither news nor fundamentals available (e.g. ETFs):
+    quality = ML × 0.65 + Momentum × 0.35
+
+The split acknowledges that ML + fundamentals are the strongest predictive
+signals, while momentum and news provide shorter-term context.
+
+Rating labels (same thresholds for Buy and Sell):
+  ≥ 70: Strong Buy / Strong Sell
+  ≥ 55: Moderate Buy / Moderate Sell
+  < 55: Weak Buy / Weak Sell
+  neutral direction: Neutral / Hold
+
+================================================================================
+14. SECURITY ARCHITECTURE
+================================================================================
+
+Security was a deliberate focus in the Opes backend. The key concerns for a
+serverless financial API are injection attacks, unauthorized access, CORS
+abuse, and information leakage.
+
+────────────────────────────────────────────────────────────────────────────────
+14.1  INPUT VALIDATION (CWE-20 / OWASP A03)
+────────────────────────────────────────────────────────────────────────────────
+
+Stock symbols are the only user-supplied input to the backend. They are
+validated by validate_symbol() before being used in any URL construction.
+
+  Regex: ^[A-Z]{1,10}(\.[A-Z]{1,2})?$
+  Max raw length: 20 chars (checked before regex, prevents backtrack DoS)
+
+This rejects anything that could alter a URL:
+  - Spaces, slashes, dots in wrong positions
+  - SQL injection sequences
+  - Path traversal (../../../etc/passwd)
+  - Unicode injection
+
+The same regex is applied client-side in api.js as a UX guard. The server
+never trusts the client — both ends validate independently.
+
+────────────────────────────────────────────────────────────────────────────────
+14.2  JWT AUTHENTICATION
+────────────────────────────────────────────────────────────────────────────────
+
+All three production endpoints (analyze, topstocks, macro) require a valid
+Clerk JWT in the Authorization: Bearer <token> header.
+
+Token verification:
+  1. Decode the JWT header to get the kid (key ID).
+  2. Fetch Clerk's JWKS (public key set). Cached 1 hour.
+  3. Find the matching public key by kid.
+  4. Verify the RS256 signature.
+  5. Verify the exp (expiry) claim.
+  6. Optionally validate azp (authorized party) to prevent cross-tenant use.
+
+Clerk tokens are RS256 (asymmetric crypto). The private key lives only on
+Clerk's servers. The backend only ever sees the public key from JWKS.
+
+This means even if someone knows the API URL, they cannot make valid requests
+without a live Clerk session. The dev server bypasses this for local dev.
+
+────────────────────────────────────────────────────────────────────────────────
+14.3  CORS HARDENING (CWE-942 / OWASP A05)
+────────────────────────────────────────────────────────────────────────────────
+
+CORS (Cross-Origin Resource Sharing) controls which websites can call the API
+from a browser. The original insecure default would be Access-Control-Allow-Origin: *
+which means any website could call the API on behalf of any user.
+
+Opes uses an explicit allowlist:
+  ALLOWED_ORIGINS = {
+    "https://finopes.vercel.app",   # production
+    "http://localhost:5173",         # Vite dev (non-production only)
+    "http://localhost:3000",         # Create React App (non-production only)
+    "http://localhost:8000",         # Python dev server (non-production only)
+  }
+
+Localhost entries are only added when VERCEL_ENV is not "production".
+The Access-Control-Allow-Origin header reflects the request origin only if
+it's in the allowlist. Otherwise no ACAO header is included at all.
+
+────────────────────────────────────────────────────────────────────────────────
+14.4  SECURE RESPONSE HEADERS
+────────────────────────────────────────────────────────────────────────────────
+
+Every API response includes:
+  X-Content-Type-Options: nosniff     — prevent MIME sniffing attacks
+  X-Frame-Options: DENY               — block clickjacking via iframes
+  Referrer-Policy: strict-origin      — limit referrer leakage
+  Cache-Control: no-store             — financial data must not be proxy-cached
+  X-Robots-Tag: noindex, nofollow     — prevent search engine indexing of API
+  Allow: GET, OPTIONS                 — restrict to only used HTTP methods
+
+────────────────────────────────────────────────────────────────────────────────
+14.5  ERROR SANITIZATION (CWE-209)
+────────────────────────────────────────────────────────────────────────────────
+
+Raw Python exception messages must never reach the client. They can reveal:
+  - Internal file paths
+  - Library names and versions (facilitates targeted exploits)
+  - Data structure details
+  - Stack traces
+
+sanitize_error() maps HTTP status codes to generic safe messages:
+  400 → "Bad request."
+  401 → "Unauthorized."
+  500 → "An internal error occurred. Please try again."
+
+The full exception is logged via print() which Vercel captures to function
+logs, so developers can still debug. Clients see only the safe message.
+
+────────────────────────────────────────────────────────────────────────────────
+14.6  THREAD POOL CAPS (DoS mitigation)
+────────────────────────────────────────────────────────────────────────────────
+
+Without caps, each call to /api/topstocks would spawn 18 threads for price
+fetching + 18 for fundamentals = 36 threads per request. A single malicious
+IP hammering the endpoint could exhaust Vercel's function CPU/memory budget.
+
+  MAX_PRICE_WORKERS = 8
+  MAX_FUND_WORKERS  = 8
+
+These are tight enough to prevent resource exhaustion, but I/O-bound work
+(network calls to Yahoo Finance) still benefits greatly from parallelism.
+
+For true per-IP rate limiting, the recommended approach is Upstash Redis
+with a sliding-window counter keyed on x-forwarded-for. The security.py file
+documents this pattern in detail.
+
+================================================================================
+15. CACHING STRATEGY
+================================================================================
+
+The app uses multiple layers of caching to keep it fast and avoid redundant
+API calls.
+
+  FRONTEND: localStorage (daily)
+    - analyze: key = "analyze_v2_<SYMBOL>_<YYYY-MM-DD>"
+      Expires at midnight. The v2 version prefix purges older format entries.
+      Stale fallback: on network error, returns any same-version entry for
+      the symbol regardless of date.
+    - topstocks: key = "topstocks_cache", keyed by date field inside the JSON.
+      One entry for all 5 stocks. On error, falls back to mock data.
+    - macro: similar same-day cache.
+
+  BACKEND: JWKS cache (in-memory, 1 hour)
+    Clerk's public key set is cached in _JWKS_CACHE for 3600 seconds.
+    Without this, every API request would make an extra HTTP call to Clerk.
+    This is safe because Clerk's public keys change infrequently (key rotation).
+
+  BACKEND: No price/ML cache
+    The ML model and price data are not cached between requests. Vercel
+    serverless functions are stateless — Python module-level variables may
+    persist within a warm instance, but this cannot be relied upon.
+    The daily frontend cache is the primary mechanism for avoiding repeat
+    model training.
+
+================================================================================
+16. DEPLOYMENT (VERCEL)
+================================================================================
+
+The app is deployed as a monorepo on Vercel:
+  - Frontend: Built by Vite (npm run build → dist/), served as static files.
+  - Backend: Python functions in api/ served as serverless functions.
+
+vercel.json configures:
+  - api/*.py routes → Vercel Python runtime (not subdirectories like api/utils/)
+  - Static files served from /dist
+
+Environment variables required on Vercel:
+  - VITE_CLERK_PUBLISHABLE_KEY: Clerk publishable key (also used by Python to
+    derive the JWKS URL)
+  - CLERK_JWKS_URL (optional): explicit JWKS URL override
+  - CLERK_AUTHORIZED_PARTY (optional): azp claim validation for cross-tenant
+    token rejection
+
+The Python runtime includes all packages from requirements.txt (scikit-learn,
+numpy, requests, PyJWT, etc.) automatically.
+
+================================================================================
+17. LOCAL DEVELOPMENT SETUP
+================================================================================
+
+See Docs/start_dev_server.txt for the full setup. In brief:
+
+  1. Install Python dependencies:
+       pip install -r requirements.txt
+
+  2. Start the Python dev server:
+       python api/dev_server.py
+     (listens on http://localhost:8000)
+
+  3. Start the React frontend:
+       npm run dev
+     (listens on http://localhost:5173 via Vite)
+
+  4. Open http://localhost:5173 in your browser.
+
+The dev server does not require Clerk credentials — JWT verification is
+bypassed when VERCEL_ENV and CLERK_JWKS_URL are not set.
+
+For production, set VITE_CLERK_PUBLISHABLE_KEY in Vercel project settings.
+
+================================================================================
+18. KEY DESIGN DECISIONS & TRADE-OFFS
+================================================================================
+
+  DECISION: Retrain the model on every request
+    WHY: Vercel serverless functions are stateless. There is no shared disk,
+    no database, and no guarantee that module-level variables persist between
+    requests. Persisting the model would require an external store (S3, Redis,
+    etc.) which adds cost and complexity. Training on ~250 data points takes
+    roughly 100-200ms — acceptable for a serverless function.
+    TRADE-OFF: Every request is slower. The daily frontend cache mitigates
+    this by ensuring users only train the model once per stock per day.
+
+  DECISION: Yahoo Finance (no API key) over paid data
+    WHY: Keeps the project free to run. Yahoo Finance provides OHLCV, quotes,
+    and fundamentals adequate for this use case.
+    TRADE-OFF: Yahoo Finance is not a stable contractual API. It has rate
+    limits, occasional outages, and format changes. The app may break if
+    Yahoo restructures its endpoints.
+
+  DECISION: Keyword-based news sentiment instead of NLP
+    WHY: Running a real NLP model (BERT, FinBERT, etc.) on every request
+    would be too slow and expensive for a serverless function.
+    TRADE-OFF: Keyword matching misses context. "Beat expectations" and
+    "beats" would both count as bullish even if the overall headline is
+    bearish. Accuracy is lower than NLP but sufficient for a rough signal.
+
+  DECISION: No persistent auth backend — Clerk handles all of it
+    WHY: Building auth from scratch (hashing passwords, session management,
+    token issuance) is high-risk and outside the core value of the app.
+    Clerk handles security, compliance, and UI.
+    TRADE-OFF: Dependency on a third-party service. If Clerk changes pricing
+    or has downtime, auth breaks.
+
+  DECISION: 36-stock watchlist instead of the full S&P 500
+    WHY: Running the ML pipeline on 500 stocks would take too long for a
+    serverless function (timeout limits). 36 stocks covers all major sectors
+    and the most widely-traded names.
+    TRADE-OFF: A great opportunity outside the watchlist is missed entirely.
+
+  DECISION: Mock portfolio data instead of brokerage integration
+    WHY: Brokerage API integrations (Plaid, TD Ameritrade, etc.) are complex,
+    require OAuth flows, and raise privacy concerns. Mock data lets the
+    portfolio view be built and styled without those concerns.
+    TRADE-OFF: The portfolio view is not actually useful for tracking real
+    holdings.
+
+================================================================================
+19. GLOSSARY OF FINANCIAL TERMS USED
+================================================================================
+
+  P/E Ratio (Price-to-Earnings): Stock price divided by earnings per share.
+    A low P/E may indicate the stock is undervalued; a high P/E may mean
+    the market expects high future growth (or the stock is overvalued).
+
+  PEG Ratio (Price/Earnings-to-Growth): P/E divided by earnings growth %.
+    PEG < 1.0 suggests a stock is undervalued relative to its growth rate.
+    Considered a more accurate valuation metric than P/E alone.
+
+  EPS (Earnings Per Share): Net profit divided by total shares outstanding.
+    Positive EPS means the company is profitable.
+
+  ROE (Return on Equity): Net income divided by shareholders' equity.
+    Measures how efficiently management uses shareholder capital.
+    ROE > 20% is generally considered strong.
+
+  Profit Margin: Net income divided by revenue. A 20% margin means the
+    company keeps $0.20 of every $1.00 in revenue as profit.
+
+  FCF Yield (Free Cash Flow Yield): Free cash flow divided by market cap.
+    Harder to fake than reported earnings. High FCF yield = cash generative.
+
+  Beta: Measures stock volatility relative to the market.
+    Beta > 1 = more volatile than the market. Beta < 1 = less volatile.
+
+  Market Cap: Total shares × current price. Measures company size.
+    Mega-cap: >$200B. Large-cap: $10B-$200B. Mid-cap: $2B-$10B.
+
+  OBV (On-Balance Volume): A running total of volume, positive on up days
+    and negative on down days. Confirms or contradicts price trends.
+
+  ATR (Average True Range): Measures daily price volatility. True Range
+    is max(high-low, |high-prev_close|, |low-prev_close|). ATR averages these.
+
+  SPY: SPDR S&P 500 ETF Trust — tracks the S&P 500 index.
+    Used as the market benchmark for relative strength calculations.
+
+  VIX: CBOE Volatility Index — the "fear gauge." Measures expected 30-day
+    volatility of the S&P 500 based on options pricing.
+    VIX < 20: low fear, calm market.
+    VIX 20-30: moderate concern.
+    VIX > 30: elevated fear / volatility.
+
+  MACD: Moving Average Convergence Divergence — momentum oscillator based
+    on the difference between two EMAs of different lengths.
+
+  Bollinger Bands: Volatility bands placed 2 standard deviations above and
+    below a 20-day simple moving average.
+
+  Walk-Forward Validation: Time-series-safe model evaluation that respects
+    temporal order — training always uses only past data to predict future data.
+    Prevents lookahead bias that would inflate model accuracy metrics.
+
+  Lookahead Bias: The error of accidentally using future data to train or
+    evaluate a model, leading to unrealistically high backtested performance
+    that will not hold in live trading.
+
+  Random Forest: An ensemble of decision trees where each tree sees a random
+    subset of features and training samples. The majority vote across all
+    trees is the final prediction. More robust than a single decision tree.
+
+  Jegadeesh-Titman Momentum: Academic finding that stocks outperforming the
+    market over the past 3-12 months tend to continue outperforming over the
+    next 3-12 months. One of the most-replicated findings in finance.
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

@@ -18,9 +18,9 @@ SECURITY MEASURES (see api/utils/security.py for full rationale):
   4. ERROR SANITIZATION — internal Python exceptions are logged server-side;
      clients receive only a generic safe message (CWE-209).
 
-  5. CONCURRENCY CAP — ThreadPoolExecutor is bounded at 3 workers for the
-     three independent I/O calls this endpoint needs. This was already correct;
-     documented here for clarity.
+  5. CONCURRENCY CAP — ThreadPoolExecutor is bounded at 5 workers for the
+     five independent I/O calls this endpoint makes (prices, SPY prices,
+     fundamentals, quote, news).
 
   6. YAHOO FINANCE TIMEOUTS — all outbound requests use a 15-second timeout
      to prevent the serverless function from hanging indefinitely.
@@ -292,22 +292,24 @@ def get_company_overview(symbol):
                 pass
 
         return {
-            "symbol":         symbol,
-            "name":           symbol,
-            "sector":         ap.get("sector"),
-            "industry":       ap.get("industry"),
-            "pe_ratio":       safe_float(ks.get("trailingPE")),
-            "forward_pe":     safe_float(ks.get("forwardPE")),
-            "eps":            safe_float(ks.get("trailingEps")),
-            "roe":            safe_float(fd.get("returnOnEquity")),
-            "market_cap":     safe_float(sd.get("marketCap")),
-            "dividend_yield": safe_float(sd.get("dividendYield")),
-            "52_week_high":   safe_float(sd.get("fiftyTwoWeekHigh")),
-            "52_week_low":    safe_float(sd.get("fiftyTwoWeekLow")),
-            "beta":           safe_float(ks.get("beta")),
-            "profit_margin":  safe_float(fd.get("profitMargins")),
-            "earnings_growth":safe_float(fd.get("earningsGrowth")),
-            "earnings":       earnings,
+            "symbol":              symbol,
+            "name":                symbol,
+            "sector":              ap.get("sector"),
+            "industry":            ap.get("industry"),
+            "pe_ratio":            safe_float(ks.get("trailingPE")),
+            "forward_pe":          safe_float(ks.get("forwardPE")),
+            "eps":                 safe_float(ks.get("trailingEps")),
+            "roe":                 safe_float(fd.get("returnOnEquity")),
+            "market_cap":          safe_float(sd.get("marketCap")),
+            "dividend_yield":      safe_float(sd.get("dividendYield")),
+            "52_week_high":        safe_float(sd.get("fiftyTwoWeekHigh")),
+            "52_week_low":         safe_float(sd.get("fiftyTwoWeekLow")),
+            "beta":                safe_float(ks.get("beta")),
+            "profit_margin":       safe_float(fd.get("profitMargins")),
+            "earnings_growth":     safe_float(fd.get("earningsGrowth")),
+            "free_cash_flow":      safe_float(fd.get("freeCashflow")),
+            "operating_cash_flow": safe_float(fd.get("operatingCashflow")),
+            "earnings":            earnings,
         }
     except Exception as e:
         print(f"[get_company_overview] {type(e).__name__}: {e}")
@@ -438,6 +440,16 @@ def calculate_all_indicators(price_data):
     bollinger= calculate_bollinger(closes)
     obv      = calculate_obv(closes, volumes)
 
+    # OBV slope vs price slope over last 10 bars — detects accumulation/distribution divergence
+    obv_divergence = "Neutral"
+    if len(obv) >= 11 and all(v is not None for v in obv[-11:]):
+        obv_slope   = (obv[-1] - obv[-11]) / (abs(obv[-11]) + 1)
+        price_slope = (closes[-1] - closes[-11]) / closes[-11] if closes[-11] != 0 else 0
+        if price_slope > 0 and obv_slope < -0.01:
+            obv_divergence = "Bearish"
+        elif price_slope < 0 and obv_slope > 0.01:
+            obv_divergence = "Bullish"
+
     latest = len(closes) - 1
     get    = lambda arr: arr[latest] if arr[latest] is not None else None
 
@@ -504,6 +516,7 @@ def calculate_all_indicators(price_data):
         "signals": {
             "rsi": rsi_signal, "macd": macd_signal,
             "bollinger": bb_signal, "trend": trend,
+            "obv_divergence": obv_divergence,
         },
         "chart_data": {
             "dates":            [p["date"]  for p in price_data][:60],
@@ -517,11 +530,12 @@ def calculate_all_indicators(price_data):
 
 # ── ML PREDICTION ─────────────────────────────────────────────────────────────
 
-def train_and_predict(price_data, fundamentals=None):
+def train_and_predict(price_data, fundamentals=None, spy_closes=None):
     """
     Train a RandomForestClassifier on 1-year of OHLCV data and predict
     the 5-day forward return direction for the most recent data point.
     Walk-forward 3-fold validation is used to estimate out-of-sample accuracy.
+    spy_closes: optional list of SPY close prices in chronological order (same length as price_data).
     """
     if len(price_data) < 50:
         return {
@@ -532,6 +546,28 @@ def train_and_predict(price_data, fundamentals=None):
     prices   = list(reversed(price_data))   # chronological order
     features, labels = [], []
     lookback = 5
+
+    # Precompute ATR series to avoid O(n²) recalculation in the feature loop
+    atr_series = []
+    for k in range(len(prices)):
+        if k == 0:
+            atr_series.append(prices[k]["high"] - prices[k]["low"])
+        else:
+            atr_series.append(max(
+                prices[k]["high"] - prices[k]["low"],
+                abs(prices[k]["high"] - prices[k-1]["close"]),
+                abs(prices[k]["low"]  - prices[k-1]["close"]),
+            ))
+
+    # Precompute OBV series
+    obv_series = [prices[0]["volume"]]
+    for k in range(1, len(prices)):
+        if prices[k]["close"] > prices[k-1]["close"]:
+            obv_series.append(obv_series[-1] + prices[k]["volume"])
+        elif prices[k]["close"] < prices[k-1]["close"]:
+            obv_series.append(obv_series[-1] - prices[k]["volume"])
+        else:
+            obv_series.append(obv_series[-1])
 
     for i in range(lookback, len(prices) - 5):
         row = []
@@ -590,6 +626,31 @@ def train_and_predict(price_data, fundamentals=None):
             row.append(ret_5d - ret_20d / 4)
         else:
             row.append(0)
+
+        # OBV slope divergence: volume confirming or contradicting price trend (Granville signal)
+        if i >= 10:
+            obv_slope   = (obv_series[i] - obv_series[i-10]) / (abs(obv_series[i-10]) + 1)
+            price_slope = (prices[i]["close"] - prices[i-10]["close"]) / prices[i-10]["close"]
+            row.append(float(np.tanh(obv_slope - price_slope * 100)))
+        else:
+            row.append(0.0)
+
+        # ATR volatility regime: 5-day ATR / 60-day ATR normalized to [0, 1]
+        # Low = contracting volatility (range-bound); high = expanding (trending/risky)
+        if i >= 60:
+            atr_5d  = float(np.mean(atr_series[i-4:i+1]))
+            atr_60d = float(np.mean(atr_series[i-59:i+1]))
+            row.append(min(1.0, atr_5d / (atr_60d + 1e-8) / 3))
+        else:
+            row.append(0.5)
+
+        # SPY relative strength: 63-day stock excess return vs market (Jegadeesh-Titman)
+        if spy_closes is not None and i >= 63 and i < len(spy_closes) and (i - 63) >= 0:
+            stock_ret = (prices[i]["close"] - prices[i-63]["close"]) / prices[i-63]["close"]
+            spy_ret   = (spy_closes[i] - spy_closes[i-63]) / spy_closes[i-63] if spy_closes[i-63] > 0 else 0
+            row.append(float(np.tanh((stock_ret - spy_ret) * 5)))
+        else:
+            row.append(0.0)
 
         features.append(row)
         fut_ret = (prices[i+5]["close"] - prices[i]["close"]) / prices[i]["close"]
@@ -720,13 +781,15 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            # 4 concurrent I/O calls: prices, fundamentals, quote, news
-            with ThreadPoolExecutor(max_workers=4) as ex:
+            # 5 concurrent I/O calls: prices, SPY prices, fundamentals, quote, news
+            with ThreadPoolExecutor(max_workers=5) as ex:
                 f_prices = ex.submit(get_daily_prices, symbol)
+                f_spy    = ex.submit(get_daily_prices, "SPY")
                 f_fund   = ex.submit(get_company_overview, symbol)
                 f_quote  = ex.submit(get_quote, symbol)
                 f_news   = ex.submit(get_news, symbol)
                 prices       = f_prices.result()
+                spy_data     = f_spy.result()
                 fundamentals = f_fund.result()
                 quote        = f_quote.result()
                 headlines    = f_news.result()
@@ -735,13 +798,35 @@ class handler(BaseHTTPRequestHandler):
                 self._respond(400, {"error": prices["error"], "symbol": symbol}, sec_headers)
                 return
 
+            # SPY closes in chronological order for relative-strength ML feature
+            spy_closes = None
+            if "prices" in spy_data and spy_data["prices"]:
+                spy_closes = list(reversed([p["close"] for p in spy_data["prices"]]))
+
+            # Current ATR ratio for volatility-regime momentum penalty
+            price_list_chron = list(reversed(prices["prices"]))
+            n_prices = len(price_list_chron)
+            current_atr_ratio = None
+            if n_prices >= 60:
+                atr_vals = []
+                for k in range(n_prices):
+                    if k == 0:
+                        atr_vals.append(price_list_chron[k]["high"] - price_list_chron[k]["low"])
+                    else:
+                        atr_vals.append(max(
+                            price_list_chron[k]["high"] - price_list_chron[k]["low"],
+                            abs(price_list_chron[k]["high"] - price_list_chron[k-1]["close"]),
+                            abs(price_list_chron[k]["low"]  - price_list_chron[k-1]["close"]),
+                        ))
+                current_atr_ratio = float(np.mean(atr_vals[-5:])) / (float(np.mean(atr_vals[-60:])) + 1e-8)
+
             # CPU-bound ML and indicator work runs after I/O completes
             indicators     = calculate_all_indicators(prices["prices"])
-            prediction     = train_and_predict(prices["prices"], fundamentals)
+            prediction     = train_and_predict(prices["prices"], fundamentals, spy_closes=spy_closes)
 
             fund_score     = compute_fundamentals_score(fundamentals)
             closes         = [p["close"] for p in prices["prices"]]
-            momentum_score = compute_momentum_score(closes)
+            momentum_score = compute_momentum_score(closes, atr_ratio=current_atr_ratio)
             news_score     = compute_news_sentiment_score(headlines)
             quality_score  = compute_quality_score(
                 prediction["confidence"], fund_score, momentum_score, news_score

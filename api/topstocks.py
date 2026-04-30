@@ -223,16 +223,18 @@ def get_fundamentals(symbol, crumb=None, cookies=None):
         ap = r.get("assetProfile", {})
 
         return {
-            "sector":          ap.get("sector"),
-            "pe_ratio":        safe_float(ks.get("trailingPE")),
-            "forward_pe":      safe_float(ks.get("forwardPE")),
-            "eps":             safe_float(ks.get("trailingEps")),
-            "roe":             safe_float(fd.get("returnOnEquity")),
-            "profit_margin":   safe_float(fd.get("profitMargins")),
-            "market_cap":      safe_float(sd.get("marketCap")),
-            "beta":            safe_float(ks.get("beta")),
-            "dividend_yield":  safe_float(sd.get("dividendYield")),
-            "earnings_growth": safe_float(fd.get("earningsGrowth")),
+            "sector":              ap.get("sector"),
+            "pe_ratio":            safe_float(ks.get("trailingPE")),
+            "forward_pe":          safe_float(ks.get("forwardPE")),
+            "eps":                 safe_float(ks.get("trailingEps")),
+            "roe":                 safe_float(fd.get("returnOnEquity")),
+            "profit_margin":       safe_float(fd.get("profitMargins")),
+            "market_cap":          safe_float(sd.get("marketCap")),
+            "beta":                safe_float(ks.get("beta")),
+            "dividend_yield":      safe_float(sd.get("dividendYield")),
+            "earnings_growth":     safe_float(fd.get("earningsGrowth")),
+            "free_cash_flow":      safe_float(fd.get("freeCashflow")),
+            "operating_cash_flow": safe_float(fd.get("operatingCashflow")),
         }
     except Exception as e:
         print(f"[get_fundamentals:{symbol}] {type(e).__name__}: {e}")
@@ -278,12 +280,13 @@ def _compute_sector_medians(fund_results):
 
 # ── ML PREDICTION ─────────────────────────────────────────────────────────────
 
-def predict_stock(stock_data, fundamentals=None):
+def predict_stock(stock_data, fundamentals=None, spy_closes=None):
     """
     Run ML prediction on one stock using a Random Forest trained on 1-year
-    OHLCV data with 9 engineered features.
+    OHLCV data with 12 engineered features.
     Walk-forward 3-fold validation estimates out-of-sample accuracy.
     n_estimators=50 per validation fold to limit CPU cost across 18 stocks.
+    spy_closes: optional list of SPY close prices in chronological order.
     """
     prices = stock_data["prices"]
     if len(prices) < 50:
@@ -295,6 +298,28 @@ def predict_stock(stock_data, fundamentals=None):
     price_list = list(reversed(prices))   # chronological order
     features, labels = [], []
     lookback = 5
+
+    # Precompute ATR series to avoid O(n²) recalculation in the feature loop
+    atr_series = []
+    for k in range(len(price_list)):
+        if k == 0:
+            atr_series.append(price_list[k]["high"] - price_list[k]["low"])
+        else:
+            atr_series.append(max(
+                price_list[k]["high"] - price_list[k]["low"],
+                abs(price_list[k]["high"] - price_list[k-1]["close"]),
+                abs(price_list[k]["low"]  - price_list[k-1]["close"]),
+            ))
+
+    # Precompute OBV series
+    obv_series = [price_list[0]["volume"]]
+    for k in range(1, len(price_list)):
+        if price_list[k]["close"] > price_list[k-1]["close"]:
+            obv_series.append(obv_series[-1] + price_list[k]["volume"])
+        elif price_list[k]["close"] < price_list[k-1]["close"]:
+            obv_series.append(obv_series[-1] - price_list[k]["volume"])
+        else:
+            obv_series.append(obv_series[-1])
 
     for i in range(lookback, len(price_list) - 5):
         row = []
@@ -353,6 +378,30 @@ def predict_stock(stock_data, fundamentals=None):
             row.append(ret_5d - ret_20d / 4)
         else:
             row.append(0)
+
+        # OBV slope divergence: volume confirming or contradicting price trend (Granville signal)
+        if i >= 10:
+            obv_slope   = (obv_series[i] - obv_series[i-10]) / (abs(obv_series[i-10]) + 1)
+            price_slope = (price_list[i]["close"] - price_list[i-10]["close"]) / price_list[i-10]["close"]
+            row.append(float(np.tanh(obv_slope - price_slope * 100)))
+        else:
+            row.append(0.0)
+
+        # ATR volatility regime: 5-day ATR / 60-day ATR normalized to [0, 1]
+        if i >= 60:
+            atr_5d  = float(np.mean(atr_series[i-4:i+1]))
+            atr_60d = float(np.mean(atr_series[i-59:i+1]))
+            row.append(min(1.0, atr_5d / (atr_60d + 1e-8) / 3))
+        else:
+            row.append(0.5)
+
+        # SPY relative strength: 63-day stock excess return vs market (Jegadeesh-Titman)
+        if spy_closes is not None and i >= 63 and i < len(spy_closes) and (i - 63) >= 0:
+            stock_ret = (price_list[i]["close"] - price_list[i-63]["close"]) / price_list[i-63]["close"]
+            spy_ret   = (spy_closes[i] - spy_closes[i-63]) / spy_closes[i-63] if spy_closes[i-63] > 0 else 0
+            row.append(float(np.tanh((stock_ret - spy_ret) * 5)))
+        else:
+            row.append(0.0)
 
         features.append(row)
         fut_ret = (price_list[i+5]["close"] - price_list[i]["close"]) / price_list[i]["close"]
@@ -452,11 +501,22 @@ def predict_stock(stock_data, fundamentals=None):
             elif closes_chron[-1] < lower:
                 bb_signal = "Near Lower Band"
 
+    # OBV divergence signal derived from precomputed OBV series
+    obv_divergence = "Neutral"
+    if len(obv_series) >= 11:
+        obv_slope   = (obv_series[-1] - obv_series[-11]) / (abs(obv_series[-11]) + 1)
+        price_slope = (closes_chron[-1] - closes_chron[-11]) / closes_chron[-11] if closes_chron[-11] != 0 else 0
+        if price_slope > 0 and obv_slope < -0.01:
+            obv_divergence = "Bearish"
+        elif price_slope < 0 and obv_slope > 0.01:
+            obv_divergence = "Bullish"
+
     signals = {
-        "rsi":      "Overbought" if rsi_approx > 65 else "Oversold" if rsi_approx < 35 else "Neutral",
-        "macd":     "N/A",
-        "trend":    "Uptrend" if (sma5_val and sma20_val and sma5_val > sma20_val) else "Downtrend",
-        "bollinger": bb_signal,
+        "rsi":            "Overbought" if rsi_approx > 65 else "Oversold" if rsi_approx < 35 else "Neutral",
+        "macd":           "N/A",
+        "trend":          "Uptrend" if (sma5_val and sma20_val and sma5_val > sma20_val) else "Downtrend",
+        "bollinger":      bb_signal,
+        "obv_divergence": obv_divergence,
     }
     key_factors = build_key_factors(signals, fundamentals, {"rsi": rsi_approx}, direction)
 
@@ -493,14 +553,16 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             # ── Step 1: Fetch all price data concurrently ──────────────────
-            # Thread pool is capped at MAX_PRICE_WORKERS (8) instead of
-            # len(WATCHLIST) (18) to bound per-invocation resource usage.
+            # SPY is fetched alongside the watchlist for relative-strength features.
+            # Thread pool is capped at MAX_PRICE_WORKERS + 1 to stay within resource bounds.
             price_results = {}
-            with ThreadPoolExecutor(max_workers=MAX_PRICE_WORKERS) as ex:
+            spy_closes    = None
+            with ThreadPoolExecutor(max_workers=MAX_PRICE_WORKERS + 1) as ex:
                 future_to_info = {
                     ex.submit(get_stock_data, info["symbol"], info["sector"]): info
                     for info in WATCHLIST
                 }
+                spy_future = ex.submit(get_stock_data, "SPY", "Benchmark")
                 for future in as_completed(future_to_info):
                     info = future_to_info[future]
                     try:
@@ -509,6 +571,12 @@ class handler(BaseHTTPRequestHandler):
                             price_results[info["symbol"]] = data
                     except Exception:
                         pass   # skip failed symbols silently
+                try:
+                    spy_data = spy_future.result()
+                    if spy_data and "prices" in spy_data and spy_data["prices"]:
+                        spy_closes = list(reversed([p["close"] for p in spy_data["prices"]]))
+                except Exception:
+                    pass
 
             # ── Step 2: Fetch all fundamentals concurrently ────────────────
             # Crumb is fetched once here and shared across all worker threads.
@@ -536,14 +604,33 @@ class handler(BaseHTTPRequestHandler):
 
             for sym, stock_data in price_results.items():
                 fund       = fund_results.get(sym, {})
-                prediction = predict_stock(stock_data, fund)
+                prediction = predict_stock(stock_data, fund, spy_closes=spy_closes)
 
                 # Only include bullish predictions in the primary ranking
                 if prediction["direction"] != "bullish":
                     continue
 
-                fund_score     = compute_fundamentals_score(fund, sector_medians=dynamic_medians)
-                momentum_score = compute_momentum_score([p["close"] for p in stock_data["prices"]])
+                fund_score = compute_fundamentals_score(fund, sector_medians=dynamic_medians)
+
+                price_list_c = list(reversed(stock_data["prices"]))
+                n_p = len(price_list_c)
+                atr_ratio = None
+                if n_p >= 60:
+                    atr_v = []
+                    for k in range(n_p):
+                        if k == 0:
+                            atr_v.append(price_list_c[k]["high"] - price_list_c[k]["low"])
+                        else:
+                            atr_v.append(max(
+                                price_list_c[k]["high"] - price_list_c[k]["low"],
+                                abs(price_list_c[k]["high"] - price_list_c[k-1]["close"]),
+                                abs(price_list_c[k]["low"]  - price_list_c[k-1]["close"]),
+                            ))
+                    atr_ratio = float(np.mean(atr_v[-5:])) / (float(np.mean(atr_v[-60:])) + 1e-8)
+
+                momentum_score = compute_momentum_score(
+                    [p["close"] for p in stock_data["prices"]], atr_ratio=atr_ratio
+                )
                 quality_score  = compute_quality_score(
                     prediction["confidence"], fund_score, momentum_score
                 )
@@ -582,10 +669,29 @@ class handler(BaseHTTPRequestHandler):
                         break
                     if sym in already:
                         continue
-                    fund           = fund_results.get(sym, {})
-                    prediction     = predict_stock(stock_data, fund)
-                    fund_score     = compute_fundamentals_score(fund, sector_medians=dynamic_medians)
-                    momentum_score = compute_momentum_score([p["close"] for p in stock_data["prices"]])
+                    fund       = fund_results.get(sym, {})
+                    prediction = predict_stock(stock_data, fund, spy_closes=spy_closes)
+                    fund_score = compute_fundamentals_score(fund, sector_medians=dynamic_medians)
+
+                    price_list_c = list(reversed(stock_data["prices"]))
+                    n_p = len(price_list_c)
+                    atr_ratio = None
+                    if n_p >= 60:
+                        atr_v = []
+                        for k in range(n_p):
+                            if k == 0:
+                                atr_v.append(price_list_c[k]["high"] - price_list_c[k]["low"])
+                            else:
+                                atr_v.append(max(
+                                    price_list_c[k]["high"] - price_list_c[k]["low"],
+                                    abs(price_list_c[k]["high"] - price_list_c[k-1]["close"]),
+                                    abs(price_list_c[k]["low"]  - price_list_c[k-1]["close"]),
+                                ))
+                        atr_ratio = float(np.mean(atr_v[-5:])) / (float(np.mean(atr_v[-60:])) + 1e-8)
+
+                    momentum_score = compute_momentum_score(
+                        [p["close"] for p in stock_data["prices"]], atr_ratio=atr_ratio
+                    )
                     quality_score  = compute_quality_score(
                         prediction["confidence"], fund_score, momentum_score
                     )
