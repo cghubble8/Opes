@@ -695,16 +695,34 @@
   text-align: center;
   max-width: 500px;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 
 .error-icon {
-  font-size: 2rem;
-  margin-bottom: var(--spacing-md);
+  font-size: 1.75rem;
+  color: var(--danger-light);
+}
+
+.error-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
 }
 
 .error-message {
-  color: var(--danger-light);
-  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  max-width: 360px;
+}
+
+.error-retry-btn {
+  margin-top: var(--spacing-sm);
+  padding: 10px 24px;
+  font-size: 0.875rem;
 }
 
 /* Results */
@@ -913,22 +931,30 @@
   text-align: center;
 }
 
-/* Tap-to-flip hint on front */
+/* Tap-to-flip hint on front — always-visible ℹ badge */
 .flip-hint {
   position: absolute;
-  bottom: var(--spacing-sm);
-  right: var(--spacing-sm);
-  font-size: 0.5625rem;
-  color: var(--text-muted);
-  opacity: 0;
-  transition: opacity var(--transition-normal);
+  top: 10px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  color: var(--gold-primary);
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-style: italic;
+  display: grid;
+  place-items: center;
+  opacity: 0.5;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
   pointer-events: none;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .flip-card-wrapper:hover .flip-hint {
   opacity: 1;
+  transform: scale(1.12);
 }
 
 /* Indicator Card — front face inner */
@@ -1091,15 +1117,45 @@
 }
 
 .chart-card h3 {
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--spacing-sm);
   color: var(--text-muted);
   font-size: 0.625rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
 
+.chart-legend {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.legend-price    { background: #C9A84C; height: 2px; }
+.legend-sma      { background: #E2C27A; height: 2px; }
+.legend-upper-bb { background: #FF6058; height: 2px; border-top: none; background-image: repeating-linear-gradient(90deg, #FF6058 0 4px, transparent 4px 7px); }
+.legend-lower-bb { background: #34D27A; height: 2px; background-image: repeating-linear-gradient(90deg, #34D27A 0 4px, transparent 4px 7px); }
+
 .chart-container {
-  height: 320px;
+  height: 300px;
 }
 
 /* Prediction Card */
@@ -1277,19 +1333,42 @@
 
 .pillar-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--spacing-sm);
   font-size: 0.8125rem;
 }
 
 .pillar-label {
   color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
 }
+
+.pillar-bar-track {
+  width: 64px;
+  flex-shrink: 0;
+  height: 3px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pillar-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pillar-bar-fill.high   { background: var(--success-light); }
+.pillar-bar-fill.medium { background: var(--warning-light); }
+.pillar-bar-fill.low    { background: var(--danger-light);  }
 
 .pillar-value {
   font-weight: 700;
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  min-width: 36px;
+  text-align: right;
 }
 
 /* Fundamentals */
@@ -1360,10 +1439,17 @@
   padding: var(--spacing-2xl);
 }
 
-.welcome-icon {
-  font-size: 3rem;
-  margin-bottom: var(--spacing-lg);
-  opacity: 0.20;
+.welcome-wordmark {
+  font-family: var(--font-display);
+  font-size: 4rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-light) 55%, var(--gold-primary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: var(--spacing-md);
+  opacity: 0.30;
 }
 
 .welcome-title {
@@ -1378,6 +1464,14 @@
 .welcome-subtitle {
   color: var(--text-muted);
   font-size: 0.9375rem;
+}
+
+.welcome-stats {
+  margin-top: var(--spacing-lg);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .popular-stocks {
@@ -1441,8 +1535,27 @@
 }
 
 .top-stocks-header {
-  text-align: center;
   margin-bottom: var(--spacing-xl);
+}
+
+.ts-header-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+}
+
+.ts-header-title {
+  grid-column: 2;
+  text-align: center;
+}
+
+.ts-header-actions {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 .top-stocks-header h2 {
@@ -1567,16 +1680,37 @@
   margin-bottom: var(--spacing-md);
 }
 
-.rank-emoji {
-  font-size: 1.5rem;
+.rank-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  flex-shrink: 0;
 }
 
-.rank-number {
-  font-size: 0.6875rem;
-  font-weight: 700;
+.rank-badge-1 .rank-number {
+  background: linear-gradient(135deg, var(--gold-primary) 0%, var(--gold-light) 100%);
+  color: #0a0806;
+  box-shadow: 0 2px 10px rgba(201, 168, 76, 0.35);
+}
+
+.rank-badge-2 .rank-number,
+.rank-badge-3 .rank-number {
+  background: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  color: var(--gold-light);
+}
+
+.rank-badge-4 .rank-number,
+.rank-badge-5 .rank-number {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 /* Stock Rank Info */
@@ -1882,7 +2016,8 @@
 /* ==================== TOP STOCKS TAB BAR ==================== */
 
 .ts-tab-bar {
-  display: inline-flex;
+  display: flex;
+  justify-content: center;
   gap: 4px;
   padding: 4px;
   background: var(--bg-elevated);
@@ -3518,6 +3653,7 @@
   font-size: 0.8125rem;
   z-index: 90;
   flex-shrink: 0;
+  margin-bottom: var(--spacing-xl);
 }
 .mb-expanded {
   height: 44px;

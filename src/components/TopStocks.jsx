@@ -3,13 +3,13 @@ import { getTopStocks } from '../services/topStocks'
 import CandlestickLoader from './CandlestickLoader'
 import StockScreener from './StockScreener'
 
-const rankEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣']
 
 function TopStocks({ onStockSelect }) {
-    const [activeTab, setActiveTab] = useState('top5')
-    const [stocks, setStocks]       = useState([])
-    const [loading, setLoading]     = useState(true)
-    const [error, setError]         = useState(null)
+    const [activeTab, setActiveTab]       = useState('top5')
+    const [stocks, setStocks]             = useState([])
+    const [loading, setLoading]           = useState(true)
+    const [error, setError]               = useState(null)
+    const [lastRefreshed, setLastRefreshed] = useState(null)
 
     useEffect(() => {
         loadTopStocks()
@@ -21,6 +21,7 @@ function TopStocks({ onStockSelect }) {
         try {
             const data = await getTopStocks({ forceRefresh })
             setStocks(data)
+            setLastRefreshed(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
         } catch (err) {
             setError(err.message)
         } finally {
@@ -38,8 +39,26 @@ function TopStocks({ onStockSelect }) {
     return (
         <div className="top-stocks-container">
             <div className="top-stocks-header">
-                <h2>Stock Intelligence</h2>
-                <p>ML-powered signals across the market</p>
+                <div className="ts-header-row">
+                    <div className="ts-header-title">
+                        <h2>Stock Intelligence</h2>
+                        <p>ML-powered signals across the market</p>
+                    </div>
+                    {activeTab === 'top5' && !loading && !error && (
+                        <div className="ts-header-actions">
+                            {lastRefreshed && (
+                                <span className="macro-date">As of {lastRefreshed}</span>
+                            )}
+                            <button
+                                className="btn-refresh"
+                                onClick={() => loadTopStocks(true)}
+                                title="Refresh top stocks"
+                            >
+                                ↻ Refresh
+                            </button>
+                        </div>
+                    )}
+                </div>
                 <div className="ts-tab-bar">
                     <button
                         className={`ts-tab ${activeTab === 'top5' ? 'active' : ''}`}
@@ -73,15 +92,6 @@ function TopStocks({ onStockSelect }) {
 
                     {!loading && !error && (
                         <>
-                            <div className="refresh-row">
-                                <button
-                                    className="refresh-btn"
-                                    onClick={() => loadTopStocks(true)}
-                                >
-                                    🔄 Refresh
-                                </button>
-                            </div>
-
                             <div className="top-stocks-grid">
                                 {stocks.map((stock, index) => (
                                     <div
@@ -89,8 +99,8 @@ function TopStocks({ onStockSelect }) {
                                         className={`stock-rank-card rank-${index + 1}`}
                                         onClick={() => onStockSelect(stock.symbol)}
                                     >
-                                        <div className="rank-badge">
-                                            <span className="rank-emoji">{rankEmojis[index]}</span>
+                                        <div className={`rank-badge rank-badge-${index + 1}`}>
+                                            <span className="rank-number">{index + 1}</span>
                                         </div>
 
                                         <div className="stock-rank-info">

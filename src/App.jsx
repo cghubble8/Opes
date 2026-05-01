@@ -138,6 +138,8 @@ function App() {
     })
   }
 
+  const handleRetry = () => handleQuickSearch(symbol)
+
   // Format large numbers
   const formatNumber = (num) => {
     if (!num) return 'N/A'
@@ -289,17 +291,21 @@ function App() {
           {/* Error State */}
           {error && (
             <div className="error-container">
-              <div className="error-icon">!</div>
+              <div className="error-icon">⚠</div>
+              <h3 className="error-title">Analysis failed</h3>
               <p className="error-message">{error}</p>
+              <button className="btn-primary error-retry-btn" onClick={handleRetry}>
+                Try Again
+              </button>
             </div>
           )}
 
           {/* Welcome State */}
           {!loading && !error && !data && (
             <div className="welcome-container">
-              <div className="welcome-icon">◈</div>
-              <h2 className="welcome-title">Enter a stock symbol to begin analysis</h2>
-              <p className="welcome-subtitle">Get technical indicators, fundamentals, and AI predictions</p>
+              <div className="welcome-wordmark">Opes</div>
+              <h2 className="welcome-title">Enter a symbol to begin</h2>
+              <p className="welcome-subtitle">AI-powered · Technical indicators · ML predictions</p>
               <div className="popular-stocks">
                 <button className="stock-chip" onClick={() => handleQuickSearch('AAPL')}>AAPL</button>
                 <button className="stock-chip" onClick={() => handleQuickSearch('GOOGL')}>GOOGL</button>
@@ -307,6 +313,7 @@ function App() {
                 <button className="stock-chip" onClick={() => handleQuickSearch('TSLA')}>TSLA</button>
                 <button className="stock-chip" onClick={() => handleQuickSearch('AMZN')}>AMZN</button>
               </div>
+              <p className="welcome-stats">Updated daily · ML-powered · 18-stock watchlist</p>
             </div>
           )}
 
@@ -371,6 +378,7 @@ function App() {
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
+                        <span className="flip-hint">ℹ</span>
                         <h3>RSI (14)</h3>
                         <div className="indicator-value">{data.indicators?.rsi?.toFixed(1) || 'N/A'}</div>
                         <div className={`indicator-signal signal-${data.signals?.rsi?.toLowerCase().replace(' ', '-')}`}>
@@ -412,6 +420,7 @@ function App() {
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
+                        <span className="flip-hint">ℹ</span>
                         <h3>MACD</h3>
                         <div className="indicator-value">{data.indicators?.macd?.toFixed(4) || 'N/A'}</div>
                         <div className={`indicator-signal signal-${data.signals?.macd?.toLowerCase()}`}>
@@ -442,10 +451,14 @@ function App() {
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
+                        <span className="flip-hint">ℹ</span>
                         <h3>Moving Averages</h3>
-                        <div className="indicator-value">{data.signals?.trend}</div>
-                        <div className={`indicator-signal signal-${data.signals?.trend?.toLowerCase().replace(' ', '-')}`}>
-                          {data.signals?.trend}
+                        <div className="indicator-value">
+                          {data.signals?.trend?.toLowerCase().includes('up') ? '↑ ' : data.signals?.trend?.toLowerCase().includes('down') ? '↓ ' : '→ '}
+                          {data.signals?.trend || 'N/A'}
+                        </div>
+                        <div className={`indicator-signal signal-${data.signals?.trend?.toLowerCase().includes('up') ? 'bullish' : data.signals?.trend?.toLowerCase().includes('down') ? 'bearish' : 'neutral'}`}>
+                          {data.signals?.trend?.toLowerCase().includes('up') ? 'Bullish' : data.signals?.trend?.toLowerCase().includes('down') ? 'Bearish' : 'Neutral'}
                         </div>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
                           SMA20: ${data.indicators?.sma_20?.toFixed(2)} | SMA50: ${data.indicators?.sma_50?.toFixed(2)}
@@ -472,6 +485,7 @@ function App() {
                   <div className="flip-card-inner">
                     <div className="flip-card-front">
                       <div className="card indicator-card">
+                        <span className="flip-hint">ℹ</span>
                         <h3>Bollinger Bands</h3>
                         <div className="indicator-value">{data.signals?.bollinger}</div>
                         <div className={`indicator-signal signal-${data.signals?.bollinger?.toLowerCase().replace(/ /g, '-')}`}>
@@ -495,7 +509,13 @@ function App() {
               <div className="chart-prediction-grid">
                 {/* Price Chart */}
                 <div className="card chart-card">
-                  <h3>Price Chart with Bollinger Bands</h3>
+                  <h3>{data.symbol} — 1 Year Price History</h3>
+                  <div className="chart-legend">
+                    <span className="legend-item"><span className="legend-swatch legend-price"></span>Price</span>
+                    <span className="legend-item"><span className="legend-swatch legend-sma"></span>SMA 20</span>
+                    <span className="legend-item"><span className="legend-swatch legend-upper-bb"></span>Upper BB</span>
+                    <span className="legend-item"><span className="legend-swatch legend-lower-bb"></span>Lower BB</span>
+                  </div>
                   <div className="chart-container">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={getChartData()} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
@@ -558,21 +578,37 @@ function App() {
                   <div className="pillar-breakdown">
                     <div className="pillar-row">
                       <span className="pillar-label">AI Confidence</span>
+                      <div className="pillar-bar-track">
+                        <div className={`pillar-bar-fill ${(data.prediction?.confidence || 0) > 70 ? 'high' : (data.prediction?.confidence || 0) > 50 ? 'medium' : 'low'}`}
+                             style={{ width: `${data.prediction?.confidence || 0}%` }}></div>
+                      </div>
                       <span className="pillar-value">{data.prediction?.confidence}%</span>
                     </div>
                     {data.prediction?.fund_score != null && (
                       <div className="pillar-row">
                         <span className="pillar-label">Fundamentals</span>
+                        <div className="pillar-bar-track">
+                          <div className={`pillar-bar-fill ${data.prediction.fund_score > 70 ? 'high' : data.prediction.fund_score > 50 ? 'medium' : 'low'}`}
+                               style={{ width: `${data.prediction.fund_score}%` }}></div>
+                        </div>
                         <span className="pillar-value">{data.prediction.fund_score.toFixed(1)}</span>
                       </div>
                     )}
                     <div className="pillar-row">
                       <span className="pillar-label">Momentum</span>
+                      <div className="pillar-bar-track">
+                        <div className={`pillar-bar-fill ${(data.prediction?.momentum_score || 0) > 70 ? 'high' : (data.prediction?.momentum_score || 0) > 50 ? 'medium' : 'low'}`}
+                             style={{ width: `${data.prediction?.momentum_score || 0}%` }}></div>
+                      </div>
                       <span className="pillar-value">{data.prediction?.momentum_score?.toFixed(1)}</span>
                     </div>
                     {data.prediction?.news_score != null && (
                       <div className="pillar-row">
                         <span className="pillar-label">News Sentiment</span>
+                        <div className="pillar-bar-track">
+                          <div className={`pillar-bar-fill ${data.prediction.news_score > 70 ? 'high' : data.prediction.news_score > 50 ? 'medium' : 'low'}`}
+                               style={{ width: `${data.prediction.news_score}%` }}></div>
+                        </div>
                         <span className="pillar-value">{data.news?.label || data.prediction.news_score.toFixed(1)}</span>
                       </div>
                     )}
