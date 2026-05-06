@@ -48,7 +48,7 @@ function validateSymbol(raw) {
 
 // Bump this when a deployment changes the data shape or fixes bad cached data.
 // Any localStorage entry from an older version is automatically discarded.
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 // ── Cache helpers ──────────────────────────────────────────────
 function todayStr() {

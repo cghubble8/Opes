@@ -47,15 +47,5 @@ SKIP (at least for now)
   Options / dark pool — Data is expensive, narrow audience
   Social sentiment    — Noisy signal (Reddit/StockTwits), hard to do well
 
-
-PRIORITY ORDER
---------------
-
-1. Screener           — highest leverage, backend already capable
-2. Watchlist + alerts — retention driver, daily active use
-3. Signal history     — trust builder, differentiates from black-box apps
-4. News sentiment     — 5th pillar, improves the model's story
-5. Real Portfolio     — removes biggest credibility gap in the app
-
 Core principle: features that make the ML model more useful and
 trustworthy > features that copy what other finance apps already do well.

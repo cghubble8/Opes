@@ -747,6 +747,75 @@ def train_and_predict(price_data, fundamentals=None, spy_closes=None):
     }
 
 
+# ── BACKTESTING ───────────────────────────────────────────────────────────────
+
+def compute_backtest_signals(price_data, n_signals=6, step_days=21):
+    """
+    Walk backwards through price_data (newest-first), generate a model signal at
+    each step using only data available up to that date, then record the actual
+    30-day (22 trading day) subsequent return from real prices.
+    No look-ahead: historical_slice contains only data available at signal_idx.
+    Returns list ordered oldest → newest.
+    """
+    if len(price_data) < 80:
+        return []
+
+    results = []
+    n = len(price_data)
+
+    for k in range(n_signals):
+        signal_idx = 22 + k * step_days
+
+        future_idx = signal_idx - 22   # 22 tdays later = ~30 calendar days
+        if future_idx < 0 or signal_idx + 55 > n:
+            break
+
+        historical_slice = price_data[signal_idx:]
+        if len(historical_slice) < 55:
+            break
+
+        # Train on only data up to signal_idx; spy omitted to avoid alignment complexity
+        pred = train_and_predict(historical_slice)
+        if pred.get("confidence") == 0:
+            continue
+
+        price_at_signal = price_data[signal_idx]["close"]
+        future_price    = price_data[future_idx]["close"]
+        actual_return   = (future_price - price_at_signal) / price_at_signal * 100
+
+        results.append({
+            "date":                  price_data[signal_idx]["date"],
+            "signal":                pred["prediction"],
+            "direction":             pred["direction"],
+            "confidence":            pred["confidence"],
+            "price_at_signal":       round(price_at_signal, 2),
+            "actual_return_pct_30d": round(actual_return, 2),
+        })
+
+    results.reverse()   # oldest first for display
+    return results
+
+
+def compute_signal_stats(signal_history):
+    """Aggregate signal_history by rating label with avg 30d return."""
+    groups = {}
+    for s in signal_history:
+        label = s["signal"]
+        if label not in groups:
+            groups[label] = {"direction": s["direction"], "returns": []}
+        groups[label]["returns"].append(s["actual_return_pct_30d"])
+
+    return [
+        {
+            "signal":             label,
+            "direction":          g["direction"],
+            "count":              len(g["returns"]),
+            "avg_return_pct_30d": round(sum(g["returns"]) / len(g["returns"]), 2),
+        }
+        for label, g in sorted(groups.items(), key=lambda x: -x[1]["returns"][-1])
+    ]
+
+
 # ── API HANDLER ───────────────────────────────────────────────────────────────
 
 class handler(BaseHTTPRequestHandler):
@@ -833,6 +902,9 @@ class handler(BaseHTTPRequestHandler):
             )
             rating_label   = quality_score_to_label(quality_score, prediction["direction"])
 
+            signal_history = compute_backtest_signals(prices["prices"])
+            signal_stats   = compute_signal_stats(signal_history)
+
             key_factors = build_key_factors(
                 signals=indicators.get("signals", {}),
                 fundamentals=fundamentals,
@@ -897,6 +969,8 @@ class handler(BaseHTTPRequestHandler):
                 } if headlines else None,
                 "earnings": fundamentals.get("earnings"),
                 "chart_data": indicators.get("chart_data", {}),
+                "signal_history": signal_history,
+                "signal_stats":   signal_stats,
             }, sec_headers)
 
         except Exception as e:
