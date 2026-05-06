@@ -214,7 +214,8 @@ function App() {
             className={`nav-tab ${currentView === 'topstocks' ? 'active' : ''}`}
             onClick={() => setCurrentView('topstocks')}
           >
-            Top 5 Buys
+            <span className="nav-label-desktop">Top 5 Buys</span>
+            <span className="nav-label-mobile">Top 5</span>
           </button>
           <button
             className={`nav-tab ${currentView === 'portfolio' ? 'active' : ''}`}
@@ -339,7 +340,7 @@ function App() {
                     onClick={() => setCompareOpen(o => !o)}
                     title="Compare with other stocks"
                   >
-                    {compareOpen ? 'Close Compare' : 'Compare'}
+                    Compare {compareOpen ? '▼' : '▲'}
                   </button>
                 </div>
               </div>
@@ -732,8 +733,32 @@ function App() {
                 </div>
               )}
 
-              {/* Compare Panel */}
-              {compareOpen && (
+            </div>
+          )}
+        </>
+      )}
+        {/* Compare Bottom Sheet */}
+        {data && (
+          <>
+            {compareOpen && (
+              <div
+                className="compare-sheet-backdrop"
+                onClick={() => setCompareOpen(false)}
+              />
+            )}
+            <div className={`compare-sheet ${compareOpen ? 'compare-sheet-open' : ''}`}>
+              <div className="compare-sheet-handle-bar">
+                <div className="compare-sheet-handle" />
+                <span className="compare-sheet-title">Compare Stocks</span>
+                <button
+                  className="compare-sheet-close"
+                  onClick={() => setCompareOpen(false)}
+                  aria-label="Close compare"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="compare-sheet-body">
                 <CompareView
                   primaryData={data}
                   compareData={compareData}
@@ -741,11 +766,10 @@ function App() {
                   onRemove={handleRemoveCompare}
                   formatNumber={formatNumber}
                 />
-              )}
+              </div>
             </div>
-          )}
-        </>
-      )}
+          </>
+        )}
         </div>
       </Show>
     </>

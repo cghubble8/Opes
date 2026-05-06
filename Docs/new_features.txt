@@ -1,13 +1,6 @@
 OPES — POTENTIAL NEW FEATURES
 ==============================
 
-Signal History / Backtesting Display
-  Show how past predictions performed:
-  "When Opes rated AAPL a Strong Buy, the stock averaged +4.2%
-  over the next 30 days across 8 signals."
-  Builds trust and differentiates from black-box apps.
-  Historical data available from Yahoo Finance.
-
 Watchlist + Price/Signal Alerts
   Save tickers and get notified when:
     - Price crosses a user-set threshold
