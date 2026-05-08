@@ -7,7 +7,7 @@ export default function SignalHistoryCard({ signalHistory, signalStats }) {
     <div className="card signal-history-card">
       <h3>Signal History</h3>
       <p className="signal-history-subtitle">
-        How past ML signals performed over the following 30 days — each signal is trained on only data available at that date.
+        How past ML signals performed over the following 6 months — each signal is trained on only data available at that date.
       </p>
 
       {signalStats?.length > 0 && (
@@ -15,8 +15,8 @@ export default function SignalHistoryCard({ signalHistory, signalStats }) {
           {signalStats.map((stat, i) => (
             <div key={i} className={`signal-stat-item signal-stat-${stat.direction}`}>
               <div className="signal-stat-label">{stat.signal}</div>
-              <div className={`signal-stat-return ${stat.avg_return_pct_30d >= 0 ? 'positive' : 'negative'}`}>
-                {stat.avg_return_pct_30d >= 0 ? '+' : ''}{stat.avg_return_pct_30d.toFixed(1)}%
+              <div className={`signal-stat-return ${stat.avg_return_pct >= 0 ? 'positive' : 'negative'}`}>
+                {stat.avg_return_pct >= 0 ? '+' : ''}{stat.avg_return_pct.toFixed(1)}%
               </div>
               <div className="signal-stat-count">avg · {stat.count} signal{stat.count !== 1 ? 's' : ''}</div>
             </div>
@@ -31,7 +31,7 @@ export default function SignalHistoryCard({ signalHistory, signalStats }) {
               <th>Date</th>
               <th>Signal</th>
               <th>Price</th>
-              <th>30d Return</th>
+              <th>6-Month Return</th>
             </tr>
           </thead>
           <tbody>
@@ -42,8 +42,8 @@ export default function SignalHistoryCard({ signalHistory, signalStats }) {
                   <span className={`signal-badge signal-badge-${s.direction}`}>{s.signal}</span>
                 </td>
                 <td>${s.price_at_signal.toFixed(2)}</td>
-                <td className={s.actual_return_pct_30d >= 0 ? 'positive' : 'negative'}>
-                  {s.actual_return_pct_30d >= 0 ? '+' : ''}{s.actual_return_pct_30d.toFixed(1)}%
+                <td className={s.actual_return_pct >= 0 ? 'positive' : 'negative'}>
+                  {s.actual_return_pct >= 0 ? '+' : ''}{s.actual_return_pct.toFixed(1)}%
                 </td>
               </tr>
             ))}
@@ -52,7 +52,7 @@ export default function SignalHistoryCard({ signalHistory, signalStats }) {
       </div>
 
       <p className="signal-history-disclaimer">
-        Each signal uses only data available at that date — no future information. Past performance does not guarantee future results.
+        Each signal uses only data available at that date — no future information. Returns shown are 6-month forward performance. Past performance does not guarantee future results.
       </p>
     </div>
   )

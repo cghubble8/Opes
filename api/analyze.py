@@ -572,12 +572,13 @@ def train_and_predict(price_data, fundamentals=None, spy_closes=None):
 
 # ── BACKTESTING ───────────────────────────────────────────────────────────────
 
-def compute_backtest_signals(price_data, n_signals=6, step_days=21):
+def compute_backtest_signals(price_data, n_signals=3, step_days=126):
     """
     Walk backwards through price_data (newest-first), generate a model signal at
     each step using only data available up to that date, then record the actual
-    30-day (22 trading day) subsequent return from real prices.
+    6-month (~126 trading day) subsequent return from real prices.
     No look-ahead: historical_slice contains only data available at signal_idx.
+    Requires 2y price data; returns 3 signals spaced ~6 months apart (oldest ~18mo ago).
     Returns list ordered oldest → newest.
     """
     if len(price_data) < 80:
@@ -587,14 +588,14 @@ def compute_backtest_signals(price_data, n_signals=6, step_days=21):
     n = len(price_data)
 
     for k in range(n_signals):
-        signal_idx = 22 + k * step_days
+        signal_idx = 126 + k * step_days
 
-        future_idx = signal_idx - 22   # 22 tdays later = ~30 calendar days
-        if future_idx < 0 or signal_idx + 55 > n:
+        future_idx = signal_idx - 126  # 126 tdays later = ~6 calendar months
+        if future_idx < 0 or signal_idx + 80 > n:
             break
 
         historical_slice = price_data[signal_idx:]
-        if len(historical_slice) < 55:
+        if len(historical_slice) < 80:
             break
 
         # Train on only data up to signal_idx; spy omitted to avoid alignment complexity
@@ -607,12 +608,12 @@ def compute_backtest_signals(price_data, n_signals=6, step_days=21):
         actual_return   = (future_price - price_at_signal) / price_at_signal * 100
 
         results.append({
-            "date":                  price_data[signal_idx]["date"],
-            "signal":                pred["prediction"],
-            "direction":             pred["direction"],
-            "confidence":            pred["confidence"],
-            "price_at_signal":       round(price_at_signal, 2),
-            "actual_return_pct_30d": round(actual_return, 2),
+            "date":              price_data[signal_idx]["date"],
+            "signal":            pred["prediction"],
+            "direction":         pred["direction"],
+            "confidence":        pred["confidence"],
+            "price_at_signal":   round(price_at_signal, 2),
+            "actual_return_pct": round(actual_return, 2),
         })
 
     results.reverse()   # oldest first for display
@@ -620,20 +621,20 @@ def compute_backtest_signals(price_data, n_signals=6, step_days=21):
 
 
 def compute_signal_stats(signal_history):
-    """Aggregate signal_history by rating label with avg 30d return."""
+    """Aggregate signal_history by rating label with avg 6-month return."""
     groups = {}
     for s in signal_history:
         label = s["signal"]
         if label not in groups:
             groups[label] = {"direction": s["direction"], "returns": []}
-        groups[label]["returns"].append(s["actual_return_pct_30d"])
+        groups[label]["returns"].append(s["actual_return_pct"])
 
     return [
         {
-            "signal":             label,
-            "direction":          g["direction"],
-            "count":              len(g["returns"]),
-            "avg_return_pct_30d": round(sum(g["returns"]) / len(g["returns"]), 2),
+            "signal":         label,
+            "direction":      g["direction"],
+            "count":          len(g["returns"]),
+            "avg_return_pct": round(sum(g["returns"]) / len(g["returns"]), 2),
         }
         for label, g in sorted(groups.items(), key=lambda x: -x[1]["returns"][-1])
     ]
@@ -660,7 +661,7 @@ def analyze_symbol(symbol):
     """
     # 5 concurrent I/O calls: prices, SPY prices, fundamentals, quote, news
     with ThreadPoolExecutor(max_workers=5) as ex:
-        f_prices = ex.submit(get_daily_prices, symbol)
+        f_prices = ex.submit(get_daily_prices, symbol, "2y")
         f_spy    = ex.submit(get_daily_prices, "SPY")
         f_fund   = ex.submit(get_company_overview, symbol)
         f_quote  = ex.submit(get_quote, symbol)
