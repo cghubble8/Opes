@@ -358,7 +358,6 @@ function App() {
                   compareData={compareData}
                   onAdd={handleAddCompare}
                   onRemove={handleRemoveCompare}
-                  formatNumber={formatNumber}
                 />
               </div>
             </div>
