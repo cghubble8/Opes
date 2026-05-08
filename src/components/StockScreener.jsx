@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { getScreenerResults } from '../services/screener'
 import CandlestickLoader from './CandlestickLoader'
+import './StockScreener.css'
 
 const DIRECTIONS = [
     { value: 'any',     label: 'Any Direction' },

@@ -3,6 +3,7 @@ import { useUser } from '@clerk/react'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { getBudget, saveBudget } from '../services/budget'
 import CandlestickLoader from './CandlestickLoader'
+import './Budget.css'
 
 // Pure utility functions
 const formatCurrencyValue = (num) => {

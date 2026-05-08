@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './CompareView.css'
 
 const METRICS = [
   { key: 'quality_score',  label: 'Quality Score', get: d => d.prediction?.quality_score, fmt: v => `${v?.toFixed(1)} / 100`, higher: true },

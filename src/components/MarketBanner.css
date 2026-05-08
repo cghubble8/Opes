@@ -1,0 +1,88 @@
+/* ── Market Banner ─────────────────────────────────────────────────────────── */
+.mb-bar {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 14, 11, 0.92);
+  border-bottom: 1px solid rgba(201, 168, 76, 0.15);
+  padding: 0 20px;
+  font-size: 0.8125rem;
+  z-index: 90;
+  flex-shrink: 0;
+  margin-bottom: var(--spacing-xl);
+}
+.mb-expanded {
+  height: 44px;
+  gap: 8px;
+}
+.mb-collapsed {
+  height: 28px;
+  justify-content: space-between;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.mb-collapsed:hover { opacity: 1; }
+.mb-collapsed-label { color: var(--text-muted); font-size: 0.75rem; letter-spacing: 0.06em; }
+.mb-items {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  overflow: hidden;
+}
+.mb-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.mb-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.mb-price {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.mb-change { font-size: 0.75rem; font-weight: 500; }
+.mb-vix-label { font-size: 0.72rem; }
+.mb-sector-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid currentColor;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.mb-toggle { color: var(--text-muted); font-size: 0.8rem; }
+.mb-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 6px;
+  margin-left: auto;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  line-height: 1;
+}
+.mb-toggle-btn:hover { opacity: 1; }
+.mb-unavailable { color: var(--text-muted); font-size: 0.8rem; }
+.mb-shimmer-row { display: flex; gap: 12px; align-items: center; }
+.mb-shimmer {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(201,168,76,0.07) 25%, rgba(201,168,76,0.14) 50%, rgba(201,168,76,0.07) 75%);
+  background-size: 200% 100%;
+  animation: mb-shimmer-anim 1.4s infinite;
+}
+@keyframes mb-shimmer-anim {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

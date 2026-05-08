@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import { getPortfolio } from '../services/portfolio'
 import CandlestickLoader from './CandlestickLoader'
+import './Portfolio.css'
 
 function Portfolio({ onStockSelect }) {
     const [portfolio, setPortfolio] = useState(null)

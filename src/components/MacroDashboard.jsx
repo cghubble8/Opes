@@ -3,6 +3,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Cell,
 } from 'recharts'
+import './MacroDashboard.css'
 import { getMacroData } from '../services/macro'
 import CandlestickLoader from './CandlestickLoader'
 

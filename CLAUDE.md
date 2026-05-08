@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Subagent Rules
+- Do NOT spawn Explore for simple file lookups or single-file reads — do it directly
+- Only use Explore for broad codebase searches across many files
+
 ## Instructions
 When creating a new function make a concise comment with what it does
 
@@ -67,12 +71,8 @@ Two Vercel Python serverless handlers:
 | Yahoo Finance Chart API (`/v8/finance/chart`) | None | Prices (1yr OHLCV), current quote |
 | Yahoo Finance quoteSummary (`/v10/finance/quoteSummary`) | None | PE, ROE, EPS, profit margin, earnings growth, sector, 52-week high/low, beta |
 
-All fundamentals now come from Yahoo Finance. Alpha Vantage is no longer used.
+All fundamentals now come from Yahoo Finance. 
 
 ### Deployment
 
 `vercel.json` routes `api/*.py` (top-level only, not `api/utils/`) to Vercel's Python runtime. Static frontend served from `/dist`. The ML model is retrained on every backend request — no persistence.
-
-### Auth
-
-Login is demo-only — `Login.jsx` accepts any email/password and stores a local user object. There is no backend auth.

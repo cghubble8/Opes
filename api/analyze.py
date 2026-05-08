@@ -41,10 +41,10 @@ import json
 from urllib.parse import urlparse, parse_qs
 import requests
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
+from utils.ml import build_features_and_labels, classify_direction
 from utils.scoring import (
     compute_fundamentals_score,
     compute_momentum_score,
@@ -532,10 +532,9 @@ def calculate_all_indicators(price_data):
 
 def train_and_predict(price_data, fundamentals=None, spy_closes=None):
     """
-    Train a RandomForestClassifier on 1-year of OHLCV data and predict
-    the 5-day forward return direction for the most recent data point.
-    Walk-forward 3-fold validation is used to estimate out-of-sample accuracy.
-    spy_closes: optional list of SPY close prices in chronological order (same length as price_data).
+    Train a RandomForest on 1-year OHLCV data and predict the 5-day forward direction.
+    Feature engineering and model training are shared via utils.ml.
+    spy_closes: optional SPY close prices in chronological order for relative-strength feature.
     """
     if len(price_data) < 50:
         return {
@@ -543,118 +542,8 @@ def train_and_predict(price_data, fundamentals=None, spy_closes=None):
             "direction": "neutral", "reasoning": "Need 50+ days of data",
         }
 
-    prices   = list(reversed(price_data))   # chronological order
-    features, labels = [], []
-    lookback = 5
-
-    # Precompute ATR series to avoid O(n²) recalculation in the feature loop
-    atr_series = []
-    for k in range(len(prices)):
-        if k == 0:
-            atr_series.append(prices[k]["high"] - prices[k]["low"])
-        else:
-            atr_series.append(max(
-                prices[k]["high"] - prices[k]["low"],
-                abs(prices[k]["high"] - prices[k-1]["close"]),
-                abs(prices[k]["low"]  - prices[k-1]["close"]),
-            ))
-
-    # Precompute OBV series
-    obv_series = [prices[0]["volume"]]
-    for k in range(1, len(prices)):
-        if prices[k]["close"] > prices[k-1]["close"]:
-            obv_series.append(obv_series[-1] + prices[k]["volume"])
-        elif prices[k]["close"] < prices[k-1]["close"]:
-            obv_series.append(obv_series[-1] - prices[k]["volume"])
-        else:
-            obv_series.append(obv_series[-1])
-
-    for i in range(lookback, len(prices) - 5):
-        row = []
-
-        # 5-day lookback: daily return, volume change, high-low range
-        for j in range(lookback):
-            idx = i - j
-            if idx > 0:
-                ret = (prices[idx]["close"] - prices[idx-1]["close"]) / prices[idx-1]["close"]
-                vol = (prices[idx]["volume"] - prices[idx-1]["volume"]) / max(prices[idx-1]["volume"], 1)
-                hl  = (prices[idx]["high"]  - prices[idx]["low"])      / prices[idx]["close"]
-                row.extend([ret, vol, hl])
-
-        # Price position within 5-day range (0=at low, 1=at high)
-        hi = max(p["high"] for p in prices[i-lookback:i+1])
-        lo = min(p["low"]  for p in prices[i-lookback:i+1])
-        row.append((prices[i]["close"] - lo) / (hi - lo) if hi != lo else 0.5)
-
-        # Normalized RSI proxy (0-1)
-        gains, losses = [], []
-        for j in range(1, min(15, i + 1)):
-            chg = prices[i-j+1]["close"] - prices[i-j]["close"]
-            (gains if chg > 0 else losses).append(abs(chg))
-        rs = (np.mean(gains) if gains else 0) / (np.mean(losses) if losses else 0.001)
-        row.append((100 - 100 / (1 + rs)) / 100)
-
-        # SMA crossover signal (1=bullish cross, 0=bearish)
-        if i >= 20:
-            sma10 = np.mean([p["close"] for p in prices[i-9:i+1]])
-            sma20 = np.mean([p["close"] for p in prices[i-19:i+1]])
-            row.append(1 if sma10 > sma20 else 0)
-        else:
-            row.append(0.5)
-
-        # Bollinger Band %B — where price sits within the bands (0=lower, 1=upper)
-        if i >= 20:
-            window           = [p["close"] for p in prices[i-19:i+1]]
-            bb_sma, bb_std   = np.mean(window), np.std(window)
-            if bb_std > 0:
-                bb_pct = (prices[i]["close"] - (bb_sma - 2*bb_std)) / (4*bb_std)
-                row.append(max(0.0, min(1.0, bb_pct)))
-            else:
-                row.append(0.5)
-        else:
-            row.append(0.5)
-
-        # Distance from 52-week high (0=at high, higher=further below)
-        window_52w = prices[max(0, i-251):i+1]
-        high_52w   = max(p["high"] for p in window_52w)
-        row.append((high_52w - prices[i]["close"]) / high_52w if high_52w > 0 else 0)
-
-        # Rate-of-change deceleration: 5-day return vs 20-day annualised run rate
-        if i >= 20:
-            ret_5d  = (prices[i]["close"] - prices[i-5]["close"])  / prices[i-5]["close"]
-            ret_20d = (prices[i]["close"] - prices[i-20]["close"]) / prices[i-20]["close"]
-            row.append(ret_5d - ret_20d / 4)
-        else:
-            row.append(0)
-
-        # OBV slope divergence: volume confirming or contradicting price trend (Granville signal)
-        if i >= 10:
-            obv_slope   = (obv_series[i] - obv_series[i-10]) / (abs(obv_series[i-10]) + 1)
-            price_slope = (prices[i]["close"] - prices[i-10]["close"]) / prices[i-10]["close"]
-            row.append(float(np.tanh(obv_slope - price_slope * 100)))
-        else:
-            row.append(0.0)
-
-        # ATR volatility regime: 5-day ATR / 60-day ATR normalized to [0, 1]
-        # Low = contracting volatility (range-bound); high = expanding (trending/risky)
-        if i >= 60:
-            atr_5d  = float(np.mean(atr_series[i-4:i+1]))
-            atr_60d = float(np.mean(atr_series[i-59:i+1]))
-            row.append(min(1.0, atr_5d / (atr_60d + 1e-8) / 3))
-        else:
-            row.append(0.5)
-
-        # SPY relative strength: 63-day stock excess return vs market (Jegadeesh-Titman)
-        if spy_closes is not None and i >= 63 and i < len(spy_closes) and (i - 63) >= 0:
-            stock_ret = (prices[i]["close"] - prices[i-63]["close"]) / prices[i-63]["close"]
-            spy_ret   = (spy_closes[i] - spy_closes[i-63]) / spy_closes[i-63] if spy_closes[i-63] > 0 else 0
-            row.append(float(np.tanh((stock_ret - spy_ret) * 5)))
-        else:
-            row.append(0.0)
-
-        features.append(row)
-        fut_ret = (prices[i+5]["close"] - prices[i]["close"]) / prices[i]["close"]
-        labels.append(1 if fut_ret > 0.005 else 0)   # >0.5% gain = bullish label
+    prices = list(reversed(price_data))   # chronological order
+    features, labels, _, _ = build_features_and_labels(prices, spy_closes)
 
     if len(features) < 20:
         return {
@@ -662,68 +551,7 @@ def train_and_predict(price_data, fundamentals=None, spy_closes=None):
             "direction": "neutral", "reasoning": "Not enough training data",
         }
 
-    X_train, y_train = np.array(features[:-1]), np.array(labels[:-1])
-    X_pred           = np.array(features[-1:])
-
-    if np.sum(y_train) == 0 or np.sum(y_train) == len(y_train):
-        return {
-            "prediction": "Insufficient Variety", "confidence": 0,
-            "direction": "neutral", "reasoning": "Data lacks variety",
-        }
-
-    # 3-fold expanding walk-forward validation — more robust than a single split.
-    # Folds: train [0:60%] test [60:70%], [0:70%] test [70:80%], [0:80%] test [80:90%]
-    val_accuracy = None
-    n = len(features)
-    fold_accs = []
-    for pct_train, pct_end in [(0.60, 0.70), (0.70, 0.80), (0.80, 0.90)]:
-        t_end = int(n * pct_train)
-        v_end = min(int(n * pct_end), n - 1)
-        if t_end < 20 or (v_end - t_end) < 5:
-            continue
-        X_tr_v = np.array(features[:t_end])
-        y_tr_v = np.array(labels[:t_end])
-        X_val  = np.array(features[t_end:v_end])
-        y_val  = np.array(labels[t_end:v_end])
-        if len(np.unique(y_val)) < 2 or np.sum(y_tr_v) == 0 or np.sum(y_tr_v) == len(y_tr_v):
-            continue
-        val_model = RandomForestClassifier(
-            n_estimators=50, max_depth=5, min_samples_split=5,
-            random_state=42, class_weight="balanced",
-        )
-        val_model.fit(X_tr_v, y_tr_v)
-        fold_accs.append(val_model.score(X_val, y_val))
-    if fold_accs:
-        val_accuracy = round(float(np.mean(fold_accs)) * 100, 1)
-
-    model = RandomForestClassifier(
-        n_estimators=100, max_depth=5, min_samples_split=5,
-        random_state=42, class_weight="balanced",
-    )
-    model.fit(X_train, y_train)
-
-    pred  = model.predict(X_pred)[0]
-    proba = model.predict_proba(X_pred)[0]
-    conf  = max(proba)
-
-    # Neutral band: model confidence too low to commit to a direction
-    if 0.45 <= conf <= 0.55:
-        direction = "neutral"
-        text = "Neutral / Hold"
-    elif pred == 1:
-        direction = "bullish"
-        text = (
-            "Strong Buy Signal"   if conf > 0.7
-            else "Moderate Buy Signal" if conf > 0.55
-            else "Weak Buy Signal"
-        )
-    else:
-        direction = "bearish"
-        text = (
-            "Strong Sell Signal"   if conf > 0.7
-            else "Moderate Sell Signal" if conf > 0.55
-            else "Weak Sell Signal"
-        )
+    result = classify_direction(features, labels)
 
     note = ""
     if fundamentals:
@@ -733,17 +561,12 @@ def train_and_predict(price_data, fundamentals=None, spy_closes=None):
         elif pe and pe > 35 and not fundamentals.get("earnings_growth"):
             note = " High P/E may indicate overvaluation."
 
-    baseline = max(np.mean(labels[:-1]), 1 - np.mean(labels[:-1])) * 100
-    if val_accuracy is not None and val_accuracy < baseline + 5:
+    if result.get("low_accuracy"):
         note += " Signal quality is uncertain — model shows limited historical accuracy."
 
     return {
-        "prediction":         text,
-        "confidence":         round(conf * 100, 1),
-        "direction":          direction,
-        "reasoning":          f"Based on momentum, mean-reversion, and trend patterns.{note}",
-        "model_accuracy":     round(model.score(X_train, y_train) * 100, 1),
-        "validation_accuracy": val_accuracy,
+        **result,
+        "reasoning": f"Based on momentum, mean-reversion, and trend patterns.{note}",
     }
 
 
@@ -816,16 +639,142 @@ def compute_signal_stats(signal_history):
     ]
 
 
+# ── ANALYSIS ORCHESTRATION ────────────────────────────────────────────────────
+
+def _news_label(score):
+    """Convert a numeric news sentiment score (0-100) to a human-readable label."""
+    if score is None:
+        return None
+    if score >= 70:  return "Bullish"
+    if score >= 57:  return "Moderately Bullish"
+    if score >= 43:  return "Neutral"
+    if score >= 30:  return "Moderately Bearish"
+    return "Bearish"
+
+
+def analyze_symbol(symbol):
+    """
+    Fetch market data, run indicators and ML, score, and assemble the full
+    analysis response dict for a single validated symbol.
+    Raises ValueError if price data cannot be fetched (caller maps this to 400).
+    """
+    # 5 concurrent I/O calls: prices, SPY prices, fundamentals, quote, news
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        f_prices = ex.submit(get_daily_prices, symbol)
+        f_spy    = ex.submit(get_daily_prices, "SPY")
+        f_fund   = ex.submit(get_company_overview, symbol)
+        f_quote  = ex.submit(get_quote, symbol)
+        f_news   = ex.submit(get_news, symbol)
+        prices       = f_prices.result()
+        spy_data     = f_spy.result()
+        fundamentals = f_fund.result()
+        quote        = f_quote.result()
+        headlines    = f_news.result()
+
+    if "error" in prices:
+        raise ValueError(prices["error"])
+
+    # SPY closes in chronological order for relative-strength ML feature
+    spy_closes = None
+    if "prices" in spy_data and spy_data["prices"]:
+        spy_closes = list(reversed([p["close"] for p in spy_data["prices"]]))
+
+    # ATR ratio for volatility-regime momentum penalty (5d ATR / 60d ATR)
+    price_list_chron = list(reversed(prices["prices"]))
+    n_prices = len(price_list_chron)
+    current_atr_ratio = None
+    if n_prices >= 60:
+        atr_vals = []
+        for k in range(n_prices):
+            if k == 0:
+                atr_vals.append(price_list_chron[k]["high"] - price_list_chron[k]["low"])
+            else:
+                atr_vals.append(max(
+                    price_list_chron[k]["high"] - price_list_chron[k]["low"],
+                    abs(price_list_chron[k]["high"] - price_list_chron[k-1]["close"]),
+                    abs(price_list_chron[k]["low"]  - price_list_chron[k-1]["close"]),
+                ))
+        current_atr_ratio = float(np.mean(atr_vals[-5:])) / (float(np.mean(atr_vals[-60:])) + 1e-8)
+
+    # CPU-bound work (indicators + ML) runs after all I/O completes
+    indicators     = calculate_all_indicators(prices["prices"])
+    prediction     = train_and_predict(prices["prices"], fundamentals, spy_closes=spy_closes)
+
+    fund_score     = compute_fundamentals_score(fundamentals)
+    closes         = [p["close"] for p in prices["prices"]]
+    momentum_score = compute_momentum_score(closes, atr_ratio=current_atr_ratio)
+    news_score     = compute_news_sentiment_score(headlines)
+    quality_score  = compute_quality_score(
+        prediction["confidence"], fund_score, momentum_score, news_score
+    )
+    rating_label   = quality_score_to_label(quality_score, prediction["direction"])
+
+    signal_history = compute_backtest_signals(prices["prices"])
+    signal_stats   = compute_signal_stats(signal_history)
+
+    key_factors = build_key_factors(
+        signals=indicators.get("signals", {}),
+        fundamentals=fundamentals,
+        indicators=indicators.get("indicators", {}),
+        direction=prediction["direction"],
+    )
+
+    name = fundamentals.get("name") or prices.get("meta", {}).get("name") or symbol
+
+    return {
+        "symbol": symbol,
+        "name":   name,
+        "sector": fundamentals.get("sector"),
+        "quote":  quote,
+        "indicators": indicators.get("indicators", {}),
+        "signals":    indicators.get("signals", {}),
+        "fundamentals": {
+            "pe_ratio":        fundamentals.get("pe_ratio"),
+            "forward_pe":      fundamentals.get("forward_pe"),
+            "eps":             fundamentals.get("eps"),
+            "roe":             fundamentals.get("roe"),
+            "market_cap":      fundamentals.get("market_cap"),
+            "dividend_yield":  fundamentals.get("dividend_yield"),
+            "52_week_high":    fundamentals.get("52_week_high"),
+            "52_week_low":     fundamentals.get("52_week_low"),
+            "beta":            fundamentals.get("beta"),
+            "profit_margin":   fundamentals.get("profit_margin"),
+            "earnings_growth": fundamentals.get("earnings_growth"),
+        },
+        "prediction": {
+            **prediction,
+            "reasoning":   key_factors["reasoning"],
+            "key_factors": {
+                "bullish": key_factors["bullish"],
+                "bearish": key_factors["bearish"],
+            },
+            "rating":              rating_label,
+            "quality_score":       quality_score,
+            "fund_score":          round(fund_score, 1) if fund_score is not None else None,
+            "momentum_score":      round(momentum_score, 1),
+            "news_score":          round(news_score, 1) if news_score is not None else None,
+            "validation_accuracy": prediction.get("validation_accuracy"),
+        },
+        "news": {
+            "score":     round(news_score, 1) if news_score is not None else None,
+            "label":     _news_label(news_score),
+            "headlines": headlines[:3],
+        } if headlines else None,
+        "earnings":       fundamentals.get("earnings"),
+        "chart_data":     indicators.get("chart_data", {}),
+        "signal_history": signal_history,
+        "signal_stats":   signal_stats,
+    }
+
+
 # ── API HANDLER ───────────────────────────────────────────────────────────────
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Extract the Origin header for CORS validation
         request_origin = self.headers.get("Origin")
         sec_headers    = get_security_headers(request_origin)
 
         # ── JWT AUTHENTICATION ──────────────────────────────────────────────
-        # Verify Clerk JWT token from Authorization header before processing
         auth_header = self.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             self._respond(401, {"error": sanitize_error(401)}, sec_headers)
@@ -836,13 +785,12 @@ class handler(BaseHTTPRequestHandler):
             self._respond(401, {"error": sanitize_error(401)}, sec_headers)
             return
 
-        parsed = urlparse(self.path)
-        params = parse_qs(parsed.query)
+        parsed     = urlparse(self.path)
+        params     = parse_qs(parsed.query)
+        raw_symbol = params.get("symbol", [""])[0]
 
         # ── INPUT VALIDATION ────────────────────────────────────────────────
-        # Validate the symbol before any downstream use. validate_symbol()
-        # enforces a strict character whitelist and length cap (CWE-20).
-        raw_symbol = params.get("symbol", [""])[0]
+        # validate_symbol() enforces a strict character whitelist (CWE-20).
         try:
             symbol = validate_symbol(raw_symbol)
         except ValueError as e:
@@ -850,131 +798,11 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            # 5 concurrent I/O calls: prices, SPY prices, fundamentals, quote, news
-            with ThreadPoolExecutor(max_workers=5) as ex:
-                f_prices = ex.submit(get_daily_prices, symbol)
-                f_spy    = ex.submit(get_daily_prices, "SPY")
-                f_fund   = ex.submit(get_company_overview, symbol)
-                f_quote  = ex.submit(get_quote, symbol)
-                f_news   = ex.submit(get_news, symbol)
-                prices       = f_prices.result()
-                spy_data     = f_spy.result()
-                fundamentals = f_fund.result()
-                quote        = f_quote.result()
-                headlines    = f_news.result()
-
-            if "error" in prices:
-                self._respond(400, {"error": prices["error"], "symbol": symbol}, sec_headers)
-                return
-
-            # SPY closes in chronological order for relative-strength ML feature
-            spy_closes = None
-            if "prices" in spy_data and spy_data["prices"]:
-                spy_closes = list(reversed([p["close"] for p in spy_data["prices"]]))
-
-            # Current ATR ratio for volatility-regime momentum penalty
-            price_list_chron = list(reversed(prices["prices"]))
-            n_prices = len(price_list_chron)
-            current_atr_ratio = None
-            if n_prices >= 60:
-                atr_vals = []
-                for k in range(n_prices):
-                    if k == 0:
-                        atr_vals.append(price_list_chron[k]["high"] - price_list_chron[k]["low"])
-                    else:
-                        atr_vals.append(max(
-                            price_list_chron[k]["high"] - price_list_chron[k]["low"],
-                            abs(price_list_chron[k]["high"] - price_list_chron[k-1]["close"]),
-                            abs(price_list_chron[k]["low"]  - price_list_chron[k-1]["close"]),
-                        ))
-                current_atr_ratio = float(np.mean(atr_vals[-5:])) / (float(np.mean(atr_vals[-60:])) + 1e-8)
-
-            # CPU-bound ML and indicator work runs after I/O completes
-            indicators     = calculate_all_indicators(prices["prices"])
-            prediction     = train_and_predict(prices["prices"], fundamentals, spy_closes=spy_closes)
-
-            fund_score     = compute_fundamentals_score(fundamentals)
-            closes         = [p["close"] for p in prices["prices"]]
-            momentum_score = compute_momentum_score(closes, atr_ratio=current_atr_ratio)
-            news_score     = compute_news_sentiment_score(headlines)
-            quality_score  = compute_quality_score(
-                prediction["confidence"], fund_score, momentum_score, news_score
-            )
-            rating_label   = quality_score_to_label(quality_score, prediction["direction"])
-
-            signal_history = compute_backtest_signals(prices["prices"])
-            signal_stats   = compute_signal_stats(signal_history)
-
-            key_factors = build_key_factors(
-                signals=indicators.get("signals", {}),
-                fundamentals=fundamentals,
-                indicators=indicators.get("indicators", {}),
-                direction=prediction["direction"],
-            )
-
-            name = (
-                fundamentals.get("name")
-                or prices.get("meta", {}).get("name")
-                or symbol
-            )
-
-            # Build news sentiment label
-            def _news_label(score):
-                if score is None:
-                    return None
-                if score >= 70:   return "Bullish"
-                if score >= 57:   return "Moderately Bullish"
-                if score >= 43:   return "Neutral"
-                if score >= 30:   return "Moderately Bearish"
-                return "Bearish"
-
-            self._respond(200, {
-                "symbol": symbol,
-                "name":   name,
-                "sector": fundamentals.get("sector"),
-                "quote":  quote,
-                "indicators": indicators.get("indicators", {}),
-                "signals":    indicators.get("signals", {}),
-                "fundamentals": {
-                    "pe_ratio":       fundamentals.get("pe_ratio"),
-                    "forward_pe":     fundamentals.get("forward_pe"),
-                    "eps":            fundamentals.get("eps"),
-                    "roe":            fundamentals.get("roe"),
-                    "market_cap":     fundamentals.get("market_cap"),
-                    "dividend_yield": fundamentals.get("dividend_yield"),
-                    "52_week_high":   fundamentals.get("52_week_high"),
-                    "52_week_low":    fundamentals.get("52_week_low"),
-                    "beta":           fundamentals.get("beta"),
-                    "profit_margin":  fundamentals.get("profit_margin"),
-                    "earnings_growth":fundamentals.get("earnings_growth"),
-                },
-                "prediction": {
-                    **prediction,
-                    "reasoning":   key_factors["reasoning"],
-                    "key_factors": {
-                        "bullish": key_factors["bullish"],
-                        "bearish": key_factors["bearish"],
-                    },
-                    "rating":               rating_label,
-                    "quality_score":        quality_score,
-                    "fund_score":           round(fund_score, 1) if fund_score is not None else None,
-                    "momentum_score":       round(momentum_score, 1),
-                    "news_score":           round(news_score, 1) if news_score is not None else None,
-                    "validation_accuracy":  prediction.get("validation_accuracy"),
-                },
-                "news": {
-                    "score":     round(news_score, 1) if news_score is not None else None,
-                    "label":     _news_label(news_score),
-                    "headlines": headlines[:3],
-                } if headlines else None,
-                "earnings": fundamentals.get("earnings"),
-                "chart_data": indicators.get("chart_data", {}),
-                "signal_history": signal_history,
-                "signal_stats":   signal_stats,
-            }, sec_headers)
-
+            self._respond(200, analyze_symbol(symbol), sec_headers)
+        except ValueError as e:
+            # Symbol-level error (e.g. no price data found for the ticker)
+            self._respond(400, {"error": str(e), "symbol": symbol}, sec_headers)
         except Exception as e:
-            # Sanitize exception — client gets a generic message, logs get detail.
             msg = sanitize_error(500, exc=e)
             self._respond(500, {"error": msg, "symbol": symbol}, sec_headers)
 

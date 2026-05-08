@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getTopStocks } from '../services/topStocks'
 import CandlestickLoader from './CandlestickLoader'
 import StockScreener from './StockScreener'
+import './TopStocks.css'
 
 
 function TopStocks({ onStockSelect }) {

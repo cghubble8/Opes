@@ -1,0 +1,101 @@
+Plan: Replace Simulated Backtesting with Real 6-Month-Interval History
+======================================================================
+
+Context
+-------
+The current Signal History card shows 6 signals spaced ~21 trading days apart, each
+measuring a 30-day forward return. This is dense/overlapping short-term noise, not a
+meaningful track record. The goal is real historical buy/sell ratings at 6-month
+intervals over the past ~18 months, with each rating's performance measured to the next
+rating date.
+
+Constraints & Data Availability
+--------------------------------
+Yahoo Finance valid range strings: "1y", "2y", "5y" (no "3y" or "4y").
+
+With "2y" data (~504 bars, newest-first) and step_days=126 (approx 6 months):
+  k=0: signal_idx=126, future_idx=0   -> 6mo ago  -> today          OK
+  k=1: signal_idx=252, future_idx=126 -> 12mo ago -> 6mo ago        OK
+  k=2: signal_idx=378, future_idx=252 -> 18mo ago -> 12mo ago       OK
+  k=3: signal_idx=504, price_data[504:] = empty   -> can't train    FAIL
+
+Conclusion: "2y" data supports exactly 3 reliable signals covering 18 months.
+A 4th signal at 24 months back requires "5y" (excessive). 3 signals is correct.
+
+
+Changes
+-------
+
+1. api/analyze.py — Line 678: Widen price fetch to 2 years
+
+   Before:
+     f_prices = ex.submit(get_daily_prices, symbol)
+
+   After:
+     f_prices = ex.submit(get_daily_prices, symbol, "2y")
+
+   SPY fetch on line 679 stays "1y" — only used for current-signal relative-strength
+   feature, not for backtesting.
+
+
+2. api/analyze.py — Lines 575-619: Rewrite compute_backtest_signals()
+
+   Signature (line 575):
+     Before: def compute_backtest_signals(price_data, n_signals=6, step_days=21):
+     After:  def compute_backtest_signals(price_data, n_signals=3, step_days=126):
+
+   Signal index formula (line 590):
+     Before: signal_idx = 22 + k * step_days
+     After:  signal_idx = 126 + k * step_days
+
+   Forward return window (line 592):
+     Before: future_idx = signal_idx - 22   # 22 tdays later = ~30 calendar days
+     After:  future_idx = signal_idx - 126  # 126 tdays later = ~6 calendar months
+
+   Training data guards (lines 593, 597):
+     Before: if future_idx < 0 or signal_idx + 55 > n:
+             if len(historical_slice) < 55:
+     After:  if future_idx < 0 or signal_idx + 80 > n:
+             if len(historical_slice) < 80:
+
+   Return field (line 615):
+     Before: "actual_return_pct_30d": round(actual_return, 2),
+     After:  "actual_return_pct":     round(actual_return, 2),
+
+
+3. api/analyze.py — Lines 622-639: Update compute_signal_stats()
+
+   - Line 623 docstring: "avg 30d return" -> "avg 6-month return"
+   - Line 629: s["actual_return_pct_30d"] -> s["actual_return_pct"]
+   - Line 636: "avg_return_pct_30d"       -> "avg_return_pct"
+
+
+4. src/App.jsx — Lines 681-734: Update Signal History card
+
+   Line 686  subtitle:         "30 days"          -> "6 months"
+   Line 694  conditional class: stat.avg_return_pct_30d -> stat.avg_return_pct
+   Line 695  display value:     stat.avg_return_pct_30d -> stat.avg_return_pct
+   Line 710  column header:     "30d Return"       -> "6-Month Return"
+   Line 721  conditional class: s.actual_return_pct_30d -> s.actual_return_pct
+   Line 722  display value:     s.actual_return_pct_30d -> s.actual_return_pct
+   Line 731  disclaimer: add "Returns shown are 6-month forward performance."
+
+
+Edge Cases
+----------
+- Young/sparse stocks with fewer than ~460 bars: guard `signal_idx + 80 > n` will
+  produce 1-2 signals instead of 3. Frontend's `length > 0` guard handles empty arrays.
+- SPY alignment: backtest's train_and_predict(historical_slice) omits SPY intentionally
+  (comment on line 600 stays accurate). No change needed.
+
+
+Verification
+------------
+1. Start dev server: python api/dev_server.py
+2. Hit endpoint:     curl "http://localhost:8000/api/analyze?symbol=AAPL"
+3. Confirm signal_history has 3 entries:
+   - Dates spaced ~6 months apart (oldest ~18 months ago, newest ~6 months ago)
+   - Field "actual_return_pct" present (not "actual_return_pct_30d")
+4. Confirm signal_stats entries have "avg_return_pct" (not "avg_return_pct_30d")
+5. Visual check: "6-Month Return" column header, subtitle reads "6 months",
+   no NaN/undefined values in the card

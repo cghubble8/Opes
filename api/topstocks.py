@@ -40,10 +40,10 @@ from http.server import BaseHTTPRequestHandler
 import json
 import requests
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from utils.ml import build_features_and_labels, classify_direction
 from utils.scoring import (
     compute_fundamentals_score,
     compute_momentum_score,
@@ -282,11 +282,9 @@ def _compute_sector_medians(fund_results):
 
 def predict_stock(stock_data, fundamentals=None, spy_closes=None):
     """
-    Run ML prediction on one stock using a Random Forest trained on 1-year
-    OHLCV data with 12 engineered features.
-    Walk-forward 3-fold validation estimates out-of-sample accuracy.
-    n_estimators=50 per validation fold to limit CPU cost across 18 stocks.
-    spy_closes: optional list of SPY close prices in chronological order.
+    Run ML prediction on one stock using shared feature engineering and RandomForest.
+    Feature building and model training are shared via utils.ml.
+    spy_closes: optional SPY close prices in chronological order for relative-strength feature.
     """
     prices = stock_data["prices"]
     if len(prices) < 50:
@@ -296,116 +294,7 @@ def predict_stock(stock_data, fundamentals=None, spy_closes=None):
         }
 
     price_list = list(reversed(prices))   # chronological order
-    features, labels = [], []
-    lookback = 5
-
-    # Precompute ATR series to avoid O(n²) recalculation in the feature loop
-    atr_series = []
-    for k in range(len(price_list)):
-        if k == 0:
-            atr_series.append(price_list[k]["high"] - price_list[k]["low"])
-        else:
-            atr_series.append(max(
-                price_list[k]["high"] - price_list[k]["low"],
-                abs(price_list[k]["high"] - price_list[k-1]["close"]),
-                abs(price_list[k]["low"]  - price_list[k-1]["close"]),
-            ))
-
-    # Precompute OBV series
-    obv_series = [price_list[0]["volume"]]
-    for k in range(1, len(price_list)):
-        if price_list[k]["close"] > price_list[k-1]["close"]:
-            obv_series.append(obv_series[-1] + price_list[k]["volume"])
-        elif price_list[k]["close"] < price_list[k-1]["close"]:
-            obv_series.append(obv_series[-1] - price_list[k]["volume"])
-        else:
-            obv_series.append(obv_series[-1])
-
-    for i in range(lookback, len(price_list) - 5):
-        row = []
-
-        # 5-day lookback: daily return, volume change, high-low range
-        for j in range(lookback):
-            idx = i - j
-            if idx > 0:
-                ret = (price_list[idx]["close"] - price_list[idx-1]["close"]) / price_list[idx-1]["close"]
-                vol = (price_list[idx]["volume"] - price_list[idx-1]["volume"]) / max(price_list[idx-1]["volume"], 1)
-                hl  = (price_list[idx]["high"]  - price_list[idx]["low"])      / price_list[idx]["close"]
-                row.extend([ret, vol, hl])
-
-        # Price position within 5-day range
-        hi = max(p["high"] for p in price_list[i-lookback:i+1])
-        lo = min(p["low"]  for p in price_list[i-lookback:i+1])
-        row.append((price_list[i]["close"] - lo) / (hi - lo) if hi != lo else 0.5)
-
-        # Normalized RSI proxy (0-1)
-        gains, losses = [], []
-        for j in range(1, min(15, i + 1)):
-            chg = price_list[i-j+1]["close"] - price_list[i-j]["close"]
-            (gains if chg > 0 else losses).append(abs(chg))
-        rs = (np.mean(gains) if gains else 0) / (np.mean(losses) if losses else 0.001)
-        row.append((100 - 100 / (1 + rs)) / 100)
-
-        # SMA crossover signal
-        if i >= 20:
-            sma10 = np.mean([p["close"] for p in price_list[i-9:i+1]])
-            sma20 = np.mean([p["close"] for p in price_list[i-19:i+1]])
-            row.append(1 if sma10 > sma20 else 0)
-        else:
-            row.append(0.5)
-
-        # Bollinger Band %B
-        if i >= 20:
-            window         = [p["close"] for p in price_list[i-19:i+1]]
-            bb_sma, bb_std = np.mean(window), np.std(window)
-            if bb_std > 0:
-                bb_pct = (price_list[i]["close"] - (bb_sma - 2*bb_std)) / (4*bb_std)
-                row.append(max(0.0, min(1.0, bb_pct)))
-            else:
-                row.append(0.5)
-        else:
-            row.append(0.5)
-
-        # Distance from 52-week high
-        window_52w = price_list[max(0, i-251):i+1]
-        high_52w   = max(p["high"] for p in window_52w)
-        row.append((high_52w - price_list[i]["close"]) / high_52w if high_52w > 0 else 0)
-
-        # Rate-of-change deceleration
-        if i >= 20:
-            ret_5d  = (price_list[i]["close"] - price_list[i-5]["close"])  / price_list[i-5]["close"]
-            ret_20d = (price_list[i]["close"] - price_list[i-20]["close"]) / price_list[i-20]["close"]
-            row.append(ret_5d - ret_20d / 4)
-        else:
-            row.append(0)
-
-        # OBV slope divergence: volume confirming or contradicting price trend (Granville signal)
-        if i >= 10:
-            obv_slope   = (obv_series[i] - obv_series[i-10]) / (abs(obv_series[i-10]) + 1)
-            price_slope = (price_list[i]["close"] - price_list[i-10]["close"]) / price_list[i-10]["close"]
-            row.append(float(np.tanh(obv_slope - price_slope * 100)))
-        else:
-            row.append(0.0)
-
-        # ATR volatility regime: 5-day ATR / 60-day ATR normalized to [0, 1]
-        if i >= 60:
-            atr_5d  = float(np.mean(atr_series[i-4:i+1]))
-            atr_60d = float(np.mean(atr_series[i-59:i+1]))
-            row.append(min(1.0, atr_5d / (atr_60d + 1e-8) / 3))
-        else:
-            row.append(0.5)
-
-        # SPY relative strength: 63-day stock excess return vs market (Jegadeesh-Titman)
-        if spy_closes is not None and i >= 63 and i < len(spy_closes) and (i - 63) >= 0:
-            stock_ret = (price_list[i]["close"] - price_list[i-63]["close"]) / price_list[i-63]["close"]
-            spy_ret   = (spy_closes[i] - spy_closes[i-63]) / spy_closes[i-63] if spy_closes[i-63] > 0 else 0
-            row.append(float(np.tanh((stock_ret - spy_ret) * 5)))
-        else:
-            row.append(0.0)
-
-        features.append(row)
-        fut_ret = (price_list[i+5]["close"] - price_list[i]["close"]) / price_list[i]["close"]
-        labels.append(1 if fut_ret > 0.005 else 0)
+    features, labels, obv_series, _ = build_features_and_labels(price_list, spy_closes)
 
     if len(features) < 20:
         return {
@@ -413,78 +302,18 @@ def predict_stock(stock_data, fundamentals=None, spy_closes=None):
             "direction": "neutral", "reasoning": "Not enough data",
         }
 
-    X_train, y_train = np.array(features[:-1]), np.array(labels[:-1])
-    X_pred           = np.array(features[-1:])
+    result    = classify_direction(features, labels)
+    direction = result["direction"]
 
-    if np.sum(y_train) == 0 or np.sum(y_train) == len(y_train):
-        return {
-            "prediction": "Neutral", "confidence": 50,
-            "direction": "neutral", "reasoning": "Mixed market signals",
-        }
-
-    # 3-fold walk-forward validation
-    val_accuracy = None
-    n = len(features)
-    fold_accs = []
-    for pct_train, pct_end in [(0.60, 0.70), (0.70, 0.80), (0.80, 0.90)]:
-        t_end = int(n * pct_train)
-        v_end = min(int(n * pct_end), n - 1)
-        if t_end < 20 or (v_end - t_end) < 5:
-            continue
-        X_tr_v = np.array(features[:t_end])
-        y_tr_v = np.array(labels[:t_end])
-        X_val  = np.array(features[t_end:v_end])
-        y_val  = np.array(labels[t_end:v_end])
-        if len(np.unique(y_val)) < 2 or np.sum(y_tr_v) == 0 or np.sum(y_tr_v) == len(y_tr_v):
-            continue
-        val_model = RandomForestClassifier(
-            n_estimators=50, max_depth=5, min_samples_split=5,
-            random_state=42, class_weight="balanced",
-        )
-        val_model.fit(X_tr_v, y_tr_v)
-        fold_accs.append(val_model.score(X_val, y_val))
-    if fold_accs:
-        val_accuracy = round(float(np.mean(fold_accs)) * 100, 1)
-
-    model = RandomForestClassifier(
-        n_estimators=100, max_depth=5, min_samples_split=5,
-        random_state=42, class_weight="balanced",
-    )
-    model.fit(X_train, y_train)
-
-    pred  = model.predict(X_pred)[0]
-    proba = model.predict_proba(X_pred)[0]
-    conf  = max(proba)
-
-    # Neutral band: confidence too low to call direction
-    if 0.45 <= conf <= 0.55:
-        direction = "neutral"
-        text = "Neutral / Hold"
-    elif pred == 1:
-        direction = "bullish"
-        text = (
-            "Strong Buy Signal"   if conf > 0.7
-            else "Moderate Buy Signal" if conf > 0.55
-            else "Weak Buy Signal"
-        )
-    else:
-        direction = "bearish"
-        text = (
-            "Strong Sell Signal"   if conf > 0.7
-            else "Moderate Sell Signal" if conf > 0.55
-            else "Weak Sell Signal"
-        )
-
-    # Derive signals for key factor explanations from already-computed values
-    price_list_chron = list(reversed(prices))
-    closes_chron     = [p["close"] for p in price_list_chron]
+    # Derive display signals from price_list (already in chronological order)
+    closes_chron = [p["close"] for p in price_list]
     sma5_val  = float(np.mean(closes_chron[-5:]))  if len(closes_chron) >= 5  else None
     sma20_val = float(np.mean(closes_chron[-20:])) if len(closes_chron) >= 20 else None
 
     # RSI proxy for key-factor display
     gains, losses = [], []
-    for j in range(1, min(15, len(price_list_chron))):
-        chg = price_list_chron[-j]["close"] - price_list_chron[-j-1]["close"]
+    for j in range(1, min(15, len(price_list))):
+        chg = price_list[-j]["close"] - price_list[-j-1]["close"]
         (gains if chg > 0 else losses).append(abs(chg))
     rs = (np.mean(gains) if gains else 0) / (np.mean(losses) if losses else 0.001)
     rsi_approx = 100 - 100 / (1 + rs)
@@ -501,7 +330,7 @@ def predict_stock(stock_data, fundamentals=None, spy_closes=None):
             elif closes_chron[-1] < lower:
                 bb_signal = "Near Lower Band"
 
-    # OBV divergence signal derived from precomputed OBV series
+    # OBV divergence from the series returned by build_features_and_labels
     obv_divergence = "Neutral"
     if len(obv_series) >= 11:
         obv_slope   = (obv_series[-1] - obv_series[-11]) / (abs(obv_series[-11]) + 1)
@@ -521,9 +350,7 @@ def predict_stock(stock_data, fundamentals=None, spy_closes=None):
     key_factors = build_key_factors(signals, fundamentals, {"rsi": rsi_approx}, direction)
 
     return {
-        "prediction": text,
-        "confidence": round(conf * 100, 1),
-        "direction":  direction,
+        **result,
         "reasoning":  key_factors["reasoning"],
         "key_factors": {
             "bullish": key_factors["bullish"],

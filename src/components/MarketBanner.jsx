@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getMacroData } from '../services/macro'
+import './MarketBanner.css'
 
 // VIX color by volatility regime
 function vixColor(label) {

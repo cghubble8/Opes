@@ -60,12 +60,19 @@ function analysisCacheKey(symbol) {
     return `analyze_v${CACHE_VERSION}_${symbol.toUpperCase()}_${todayStr()}`;
 }
 
-/** Wipe any analyze cache entries that don't have the current version prefix. */
+const MAX_CACHED_SYMBOLS = 20;
+
+/** Wipe analyze cache entries with wrong version or a stale date. */
 function clearStaleCacheEntries() {
     try {
         const currentPrefix = `analyze_v${CACHE_VERSION}_`;
+        const today = todayStr();
         Object.keys(localStorage)
-            .filter(k => k.startsWith('analyze_') && !k.startsWith(currentPrefix))
+            .filter(k => {
+                if (!k.startsWith('analyze_')) return false;
+                if (!k.startsWith(currentPrefix)) return true;  // wrong version
+                return !k.endsWith(`_${today}`);                // right version, old date
+            })
             .forEach(k => localStorage.removeItem(k));
     } catch (_) { /* ignore */ }
 }
@@ -81,6 +88,13 @@ function readAnalysisCache(symbol) {
 
 function writeAnalysisCache(symbol, data) {
     try {
+        const currentPrefix = `analyze_v${CACHE_VERSION}_`;
+        const existing = Object.keys(localStorage).filter(k => k.startsWith(currentPrefix));
+        // Evict oldest keys (lexicographic sort puts older dates first) when over cap
+        if (existing.length >= MAX_CACHED_SYMBOLS) {
+            existing.sort().slice(0, existing.length - MAX_CACHED_SYMBOLS + 1)
+                .forEach(k => localStorage.removeItem(k));
+        }
         localStorage.setItem(analysisCacheKey(symbol), JSON.stringify(data));
     } catch (_) { /* ignore quota errors */ }
 }

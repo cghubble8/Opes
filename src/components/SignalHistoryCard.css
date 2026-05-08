@@ -1,0 +1,95 @@
+/* ── Signal History Card ──────────────────────────────────────── */
+.signal-history-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: -4px 0 16px;
+}
+
+.signal-stats-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.signal-stat-item {
+  flex: 1 1 130px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: center;
+}
+
+.signal-stat-item.signal-stat-bullish { border-color: rgba(52,210,122,0.25); }
+.signal-stat-item.signal-stat-bearish { border-color: rgba(255,96,88,0.25); }
+
+.signal-stat-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.signal-stat-return {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.signal-stat-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.signal-history-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 14px;
+}
+
+.signal-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.signal-history-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.signal-history-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.signal-badge {
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.signal-badge-bullish {
+  background: rgba(52,210,122,0.12);
+  color: #34D27A;
+}
+
+.signal-badge-bearish {
+  background: rgba(255,96,88,0.12);
+  color: #FF6058;
+}
+
+.signal-badge-neutral {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+}
+
+.signal-history-disclaimer {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.4;
+}
