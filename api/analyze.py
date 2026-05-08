@@ -675,13 +675,19 @@ def analyze_symbol(symbol):
     if "error" in prices:
         raise ValueError(prices["error"])
 
+    # 2y window for backtest; most recent 252 bars (1y) for everything else.
+    # SPY is only fetched at 1y, so keeping the main slice at 1y keeps the
+    # relative-strength feature properly aligned.
+    prices_2y = prices["prices"]
+    prices_1y = prices_2y[:252]
+
     # SPY closes in chronological order for relative-strength ML feature
     spy_closes = None
     if "prices" in spy_data and spy_data["prices"]:
         spy_closes = list(reversed([p["close"] for p in spy_data["prices"]]))
 
     # ATR ratio for volatility-regime momentum penalty (5d ATR / 60d ATR)
-    price_list_chron = list(reversed(prices["prices"]))
+    price_list_chron = list(reversed(prices_1y))
     n_prices = len(price_list_chron)
     current_atr_ratio = None
     if n_prices >= 60:
@@ -698,11 +704,11 @@ def analyze_symbol(symbol):
         current_atr_ratio = float(np.mean(atr_vals[-5:])) / (float(np.mean(atr_vals[-60:])) + 1e-8)
 
     # CPU-bound work (indicators + ML) runs after all I/O completes
-    indicators     = calculate_all_indicators(prices["prices"])
-    prediction     = train_and_predict(prices["prices"], fundamentals, spy_closes=spy_closes)
+    indicators     = calculate_all_indicators(prices_1y)
+    prediction     = train_and_predict(prices_1y, fundamentals, spy_closes=spy_closes)
 
     fund_score     = compute_fundamentals_score(fundamentals)
-    closes         = [p["close"] for p in prices["prices"]]
+    closes         = [p["close"] for p in prices_1y]
     momentum_score = compute_momentum_score(closes, atr_ratio=current_atr_ratio)
     news_score     = compute_news_sentiment_score(headlines)
     quality_score  = compute_quality_score(
@@ -710,7 +716,7 @@ def analyze_symbol(symbol):
     )
     rating_label   = quality_score_to_label(quality_score, prediction["direction"])
 
-    signal_history = compute_backtest_signals(prices["prices"])
+    signal_history = compute_backtest_signals(prices_2y)
     signal_stats   = compute_signal_stats(signal_history)
 
     key_factors = build_key_factors(
@@ -768,6 +774,22 @@ def analyze_symbol(symbol):
     }
 
 
+# ── JSON SERIALIZATION ────────────────────────────────────────────────────────
+
+class _NumpyEncoder(json.JSONEncoder):
+    """Converts numpy scalars to Python native types so json.dumps never raises."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 # ── API HANDLER ───────────────────────────────────────────────────────────────
 
 class handler(BaseHTTPRequestHandler):
@@ -809,12 +831,13 @@ class handler(BaseHTTPRequestHandler):
 
     def _respond(self, status: int, data: dict, sec_headers: dict):
         """Send a JSON response with all security headers attached."""
+        body = json.dumps(data, cls=_NumpyEncoder).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         for name, value in sec_headers.items():
             self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        self.wfile.write(body)
 
     def do_OPTIONS(self):
         """Handle CORS preflight — only grant approval to allowed origins."""
