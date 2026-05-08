@@ -1,0 +1,241 @@
+WATCHLIST + PRICE/SIGNAL ALERTS — IMPLEMENTATION PLAN
+======================================================
+
+CONTEXT
+-------
+New "Watchlist" tab in the Opes stock analysis app. Users save tickers and
+receive email alerts when configurable conditions are met:
+  - Price crosses a user-set threshold
+  - RSI hits oversold (<30) or overbought (>70)
+  - ML rating changes to Buy
+
+Designed as a retention driver — alerts fire in the background daily.
+
+CHOSEN STACK
+------------
+- Storage:    Upstash Redis (free tier: 10k commands/day, 256MB, no expiry)
+- Email:      Resend (free tier: 3,000 emails/month)
+- Cron:       GitHub Actions scheduled workflow (free) → POST /api/check_alerts
+- Cards:      Price + RSI + ML signal (concurrent fetch, n_estimators=50)
+
+
+EXTERNAL SETUP (One-Time, Done Manually Before Deploying)
+----------------------------------------------------------
+1. Upstash Redis — upstash.com → Create Database → copy REST URL + token
+   Add to Vercel env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+   Add to local .env:      same two vars
+
+2. Resend — resend.com → Create API key → verify sending domain
+   (use onboarding@resend.dev for initial testing)
+   Add to Vercel env vars: RESEND_API_KEY, RESEND_FROM_EMAIL
+   Add to local .env:      same two vars
+
+3. Cron secret — generate: openssl rand -hex 32
+   Add to Vercel env vars: CRON_SECRET
+   Add to GitHub repo Secrets: CRON_SECRET, APP_URL (= https://finopes.vercel.app)
+
+
+REDIS KEY SCHEMA
+----------------
+Key                            Type          Value
+------------------------------  ------------  ----------------------------------------
+watchlist:{user_id}             String (JSON) [{symbol, addedAt}]
+alerts:{user_id}                String (JSON) [{id, symbol, type, condition,
+                                               threshold, enabled, lastTriggeredAt}]
+user_email:{user_id}            String        "user@example.com"
+alert_user_ids                  Redis Set     All user_ids with >= 1 active alert
+alert_state:{user_id}:{symbol}  String (JSON) {lastRating, checkedAt}
+
+Alert types:
+  price:         {type:"price", condition:"above"|"below", threshold:200.0}
+  rsi:           {type:"rsi", condition:"above"|"below", threshold:70}
+  rating_change: {type:"rating_change"} — triggers when direction flips to bullish
+
+
+FILES TO CREATE
+---------------
+
+api/watchlist.py
+  GET  /api/watchlist  — JWT auth, fetch symbols from Redis, concurrent fetch
+                         quote + 1yr prices + quick ML (n_estimators=50) per symbol
+  POST /api/watchlist  — Add symbol (validate_symbol()), cap at 20 symbols
+  DELETE /api/watchlist?symbol=X — Remove symbol from Redis
+
+  Response shape (GET):
+  {
+    "watchlist": [
+      {
+        "symbol": "AAPL", "addedAt": "...", "name": "Apple Inc.",
+        "price": 195.23, "change": -1.45, "change_percent": "-0.74%",
+        "rsi": 52.3, "rsi_signal": "Neutral",
+        "direction": "bullish", "rating": "Moderate Buy", "quality_score": 65.2
+      }
+    ]
+  }
+
+  Patterns to reuse:
+  - ThreadPoolExecutor concurrent fetch from api/topstocks.py (cap 8 workers)
+  - get_daily_prices(), get_quote(), get_company_overview(), train_and_predict()
+    copied from api/analyze.py (safe duplication for MVP, avoids refactor risk)
+
+api/alerts.py
+  GET    /api/alerts         — Return all alert rules + stored email for user
+  POST   /api/alerts         — Create alert, store user email, add to alert_user_ids set
+  PATCH  /api/alerts?id=UUID — Toggle enabled/disabled
+  DELETE /api/alerts?id=UUID — Remove; remove user from alert_user_ids if no alerts remain
+
+api/check_alerts.py
+  POST /api/check_alerts — Authenticated by X-Cron-Secret header (not JWT)
+  Logic:
+    1. Get all members of alert_user_ids Redis Set
+    2. For each user: fetch their alerts and stored email
+    3. For each enabled alert: fetch current data (quote for price, 14-day RSI,
+       quick ML for rating alerts)
+    4. Evaluate condition; if triggered AND lastTriggeredAt != today:
+       send email via Resend, update lastTriggeredAt
+    5. For rating_change alerts: compare against alert_state:{user_id}:{symbol};
+       update state after check
+  Returns: {checked: N, triggered: M, emails_sent: K}
+
+.github/workflows/check_alerts.yml
+  Runs at 9:30am ET (14:30 UTC) Mon–Fri + workflow_dispatch for manual testing:
+
+  name: Check Stock Alerts
+  on:
+    schedule:
+      - cron: '30 14 * * 1-5'
+    workflow_dispatch:
+  jobs:
+    check-alerts:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Trigger alert check
+          run: |
+            curl -f -X POST ${{ secrets.APP_URL }}/api/check_alerts \
+              -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+              -H "Content-Type: application/json"
+
+src/components/Watchlist.jsx
+  State: watchlist, loading, error, addSymbol, alertsOpen (symbol|null),
+         alerts, email
+
+  Structure:
+    1. Header row — "My Watchlist" title + inline "Add stock" input + button
+    2. Empty state — prompts user to add first ticker
+    3. Stock cards (similar to stock-rank-card from TopStocks):
+         symbol, name, price, change%, RSI badge, ML rating badge
+         [Analyze] → calls onStockSelect(symbol) to switch to Analyze tab
+         [Bell icon] → opens alert modal for this symbol
+         [X] → removes from watchlist
+    4. Alert modal — per-stock alert configuration:
+         Price alert: above/below + $ input + on/off toggle
+         RSI alert: above 70 (overbought) or below 30 (oversold) presets
+         ML rating alert: "notify when rating becomes Buy" toggle
+         Email input (pre-filled from stored alerts.email)
+         Save button
+
+src/services/watchlist.js
+  export async function getWatchlist({ forceRefresh = false } = {})
+    // GET /api/watchlist — no localStorage cache, always fresh
+  export async function addToWatchlist(symbol)
+    // POST /api/watchlist
+  export async function removeFromWatchlist(symbol)
+    // DELETE /api/watchlist?symbol=
+
+src/services/alerts.js
+  export async function getAlerts()
+    // GET /api/alerts
+  export async function createAlert(alertObj)
+    // POST /api/alerts
+  export async function toggleAlert(id, enabled)
+    // PATCH /api/alerts?id=
+  export async function deleteAlert(id)
+    // DELETE /api/alerts?id=
+
+
+FILES TO MODIFY
+---------------
+
+src/App.jsx
+  - Import Watchlist component + setTokenGetter from new services
+  - Wire token getters in existing useEffect that sets up other services
+  - Add nav button (follows existing .nav-tab pattern):
+      <button className={`nav-tab ${currentView === 'watchlist' ? 'active' : ''}`}
+              onClick={() => setCurrentView('watchlist')}>
+        Watchlist
+      </button>
+  - Add conditional render:
+      {currentView === 'watchlist' && <Watchlist onStockSelect={handleQuickSearch} />}
+
+src/App.css
+  New CSS classes to add:
+  - .watchlist-container, .watchlist-header, .watchlist-add-row
+  - .watchlist-grid, .watchlist-card
+  - .watchlist-card-signals (RSI + rating badges)
+  - .watchlist-card-actions (Analyze / bell / remove buttons)
+  - .alert-modal-overlay, .alert-modal, .alert-rule-row
+  - .rsi-badge, .rsi-overbought, .rsi-oversold, .rsi-neutral
+  - Mobile responsive at 640px (stack card content)
+
+vercel.json
+  Add to builds:
+    {"src": "api/watchlist.py", "use": "@vercel/python"},
+    {"src": "api/alerts.py", "use": "@vercel/python"},
+    {"src": "api/check_alerts.py", "use": "@vercel/python"}
+  Add to routes:
+    {"src": "/api/watchlist", "dest": "/api/watchlist.py"},
+    {"src": "/api/alerts", "dest": "/api/alerts.py"},
+    {"src": "/api/check_alerts", "dest": "/api/check_alerts.py"}
+
+api/dev_server.py
+  Add to ROUTES dict:
+    '/api/watchlist': 'watchlist',
+    '/api/alerts': 'alerts',
+    '/api/check_alerts': 'check_alerts',
+
+requirements.txt
+  Add:
+    upstash-redis>=1.0.0
+    resend>=2.0.0
+
+
+IMPLEMENTATION ORDER
+--------------------
+1.  requirements.txt          — add deps
+2.  api/watchlist.py          — backend CRUD + data fetch
+3.  api/alerts.py             — backend alert CRUD
+4.  api/check_alerts.py       — cron endpoint + Resend email
+5.  vercel.json               — route wiring
+6.  api/dev_server.py         — local route wiring
+7.  src/services/watchlist.js — frontend service
+8.  src/services/alerts.js    — frontend service
+9.  src/components/Watchlist.jsx — UI component
+10. src/App.jsx               — tab navigation integration
+11. src/App.css               — styles
+12. .github/workflows/check_alerts.yml — cron workflow
+
+
+CRITICAL REFERENCE FILES
+------------------------
+api/analyze.py               — copy get_daily_prices(), get_quote(),
+                               get_company_overview(), train_and_predict(),
+                               RSI/indicator math
+api/topstocks.py             — ThreadPoolExecutor concurrent fetch pattern
+api/utils/security.py        — verify_clerk_jwt(), validate_symbol(),
+                               get_security_headers(), get_cors_preflight_headers()
+api/utils/scoring.py         — compute_fundamentals_score(), compute_momentum_score(),
+                               compute_quality_score(), quality_score_to_label()
+src/components/TopStocks.jsx — card + sub-tab structure to replicate
+src/services/api.js          — getAuthHeaders() pattern
+src/App.jsx lines 67-239     — nav tab + service token wiring pattern
+
+
+VERIFICATION
+------------
+1. Local dev: start api/dev_server.py + Vite; add ticker → list shows price/RSI/signal
+2. Alerts CRUD: create price alert → confirm in Upstash Redis dashboard
+3. Email test: POST /api/check_alerts with cron secret → confirm email arrives
+4. GitHub Actions: trigger workflow_dispatch → check log for {emails_sent: N}
+5. Rating change: mock direction flip in Redis state → confirm email fires
+6. Edge cases: empty watchlist (empty state shown), >20 symbols (400 rejected),
+   invalid symbol (validate_symbol rejects)

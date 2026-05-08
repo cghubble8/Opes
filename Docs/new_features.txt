@@ -12,13 +12,6 @@ Watchlist + Price/Signal Alerts
 
 MEDIUM-IMPACT: Expand the audience
 -----------------------------------
-
-Macro / Market Overview Dashboard
-  Track S&P 500, Nasdaq, VIX, and sector ETFs (XLK, XLF, XLE, etc.)
-  with existing ML scoring. Gives market context before individual
-  stock analysis. "Tech sector overbought — your NVDA Buy signal
-  may be fighting the tide."
-
 Dividend Tracker
   Yield %, payout ratio, dividend history per ticker.
   Yahoo Finance has this data.
