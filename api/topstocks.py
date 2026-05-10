@@ -105,12 +105,13 @@ def safe_float(value):
 
 def get_stock_data(symbol, sector):
     """
-    Fetch 1-year OHLCV price data and current quote from Yahoo Finance.
+    Fetch 3-year OHLCV price data and current quote from Yahoo Finance.
     Symbols come from the server-side WATCHLIST — no user input involved.
+    3y window gives ~700 training samples for ML (vs ~230 with 1y).
     """
     try:
         url = YF_CHART_URL.format(symbol=symbol)
-        params = {"range": "1y", "interval": "1d", "includePrePost": "false"}
+        params = {"range": "3y", "interval": "1d", "includePrePost": "false"}
         response = requests.get(url, params=params, headers=YF_HEADERS, timeout=10)
         data = response.json()
 
@@ -439,7 +440,9 @@ class handler(BaseHTTPRequestHandler):
 
                 fund_score = compute_fundamentals_score(fund, sector_medians=dynamic_medians)
 
-                price_list_c = list(reversed(stock_data["prices"]))
+                # Use 1y slice for momentum/ATR scoring — these are short-term signals
+                prices_1y    = stock_data["prices"][:252]
+                price_list_c = list(reversed(prices_1y))
                 n_p = len(price_list_c)
                 atr_ratio = None
                 if n_p >= 60:
@@ -456,7 +459,7 @@ class handler(BaseHTTPRequestHandler):
                     atr_ratio = float(np.mean(atr_v[-5:])) / (float(np.mean(atr_v[-60:])) + 1e-8)
 
                 momentum_score = compute_momentum_score(
-                    [p["close"] for p in stock_data["prices"]], atr_ratio=atr_ratio
+                    [p["close"] for p in prices_1y], atr_ratio=atr_ratio
                 )
                 quality_score  = compute_quality_score(
                     prediction["confidence"], fund_score, momentum_score
@@ -500,7 +503,8 @@ class handler(BaseHTTPRequestHandler):
                     prediction = predict_stock(stock_data, fund, spy_closes=spy_closes)
                     fund_score = compute_fundamentals_score(fund, sector_medians=dynamic_medians)
 
-                    price_list_c = list(reversed(stock_data["prices"]))
+                    prices_1y    = stock_data["prices"][:252]
+                    price_list_c = list(reversed(prices_1y))
                     n_p = len(price_list_c)
                     atr_ratio = None
                     if n_p >= 60:
@@ -517,7 +521,7 @@ class handler(BaseHTTPRequestHandler):
                         atr_ratio = float(np.mean(atr_v[-5:])) / (float(np.mean(atr_v[-60:])) + 1e-8)
 
                     momentum_score = compute_momentum_score(
-                        [p["close"] for p in stock_data["prices"]], atr_ratio=atr_ratio
+                        [p["close"] for p in prices_1y], atr_ratio=atr_ratio
                     )
                     quality_score  = compute_quality_score(
                         prediction["confidence"], fund_score, momentum_score

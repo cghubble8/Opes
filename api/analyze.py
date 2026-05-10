@@ -661,8 +661,8 @@ def analyze_symbol(symbol):
     """
     # 5 concurrent I/O calls: prices, SPY prices, fundamentals, quote, news
     with ThreadPoolExecutor(max_workers=5) as ex:
-        f_prices = ex.submit(get_daily_prices, symbol, "2y")
-        f_spy    = ex.submit(get_daily_prices, "SPY")
+        f_prices = ex.submit(get_daily_prices, symbol, "3y")
+        f_spy    = ex.submit(get_daily_prices, "SPY", "3y")
         f_fund   = ex.submit(get_company_overview, symbol)
         f_quote  = ex.submit(get_quote, symbol)
         f_news   = ex.submit(get_news, symbol)
@@ -675,11 +675,14 @@ def analyze_symbol(symbol):
     if "error" in prices:
         raise ValueError(prices["error"])
 
-    # 2y window for backtest; most recent 252 bars (1y) for everything else.
-    # SPY is only fetched at 1y, so keeping the main slice at 1y keeps the
-    # relative-strength feature properly aligned.
-    prices_2y = prices["prices"]
-    prices_1y = prices_2y[:252]
+    # 3y window for ML training (more samples → better generalization).
+    # Most recent 252 bars (1y) continue to feed technical indicators and UI chart.
+    # Most recent 504 bars (2y) feed the backtest display.
+    # SPY is only fetched at 1y, so the relative-strength feature only fires for
+    # the portion of the 3y training window that overlaps with SPY data.
+    prices_3y = prices["prices"]
+    prices_2y = prices_3y[:504]
+    prices_1y = prices_3y[:252]
 
     # SPY closes in chronological order for relative-strength ML feature
     spy_closes = None
@@ -703,9 +706,10 @@ def analyze_symbol(symbol):
                 ))
         current_atr_ratio = float(np.mean(atr_vals[-5:])) / (float(np.mean(atr_vals[-60:])) + 1e-8)
 
-    # CPU-bound work (indicators + ML) runs after all I/O completes
+    # CPU-bound work (indicators + ML) runs after all I/O completes.
+    # Indicators and chart UI use 1y; ML training uses full 3y for more samples.
     indicators     = calculate_all_indicators(prices_1y)
-    prediction     = train_and_predict(prices_1y, fundamentals, spy_closes=spy_closes)
+    prediction     = train_and_predict(prices_3y, fundamentals, spy_closes=spy_closes)
 
     fund_score     = compute_fundamentals_score(fundamentals)
     closes         = [p["close"] for p in prices_1y]
