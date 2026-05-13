@@ -223,6 +223,69 @@ def quality_score_to_label(score, direction):
         return "Neutral / Hold"
 
 
+def compute_dividend_safety_score(fund):
+    """Score dividend safety 0-100 using payout ratio, FCF coverage, growth, earnings, and beta.
+    fund dict should include payout_ratio, operating_cash_flow, dividend_rate/trailing_div_rate,
+    shares_outstanding, growth_rate_3yr, earnings_growth, and beta.
+    """
+    if not fund or "error" in fund:
+        return None
+
+    score = 0
+
+    payout = fund.get("payout_ratio")
+    if payout is not None:
+        if payout < 0.40:      score += 30
+        elif payout < 0.60:    score += 20
+        elif payout < 0.75:    score += 10
+        elif payout <= 1.00:   score -= 10
+        else:                  score -= 30
+
+    # FCF coverage: operating cash flow / annual dividends paid
+    ocf = fund.get("operating_cash_flow")
+    div_rate = fund.get("dividend_rate") or fund.get("trailing_div_rate")
+    shares = fund.get("shares_outstanding")
+    if ocf is not None and div_rate and shares and div_rate > 0 and shares > 0:
+        annual_divs = div_rate * shares
+        if annual_divs > 0:
+            coverage = ocf / annual_divs
+            if coverage > 3:     score += 25
+            elif coverage > 2:   score += 15
+            elif coverage > 1:   score += 5
+            else:                score -= 20
+
+    # 3yr dividend growth from history (may be None when history not available)
+    growth = fund.get("growth_rate_3yr")
+    if growth is not None:
+        if growth > 0:    score += 20
+        elif growth == 0: score += 5
+        else:             score -= 30
+    else:
+        score += 5  # neutral when no history data
+
+    eg = fund.get("earnings_growth")
+    if eg is not None:
+        score += 10 if eg > 0 else -5
+
+    beta = fund.get("beta")
+    if beta is not None:
+        if beta < 1:      score += 10
+        elif beta <= 1.5: score += 5
+        else:             score -= 5
+
+    return max(0, min(100, score))
+
+
+def dividend_safety_label(score):
+    """Convert a dividend safety score to a human-readable risk label."""
+    if score is None:
+        return "Unknown"
+    if score >= 80:   return "Very Safe"
+    elif score >= 60: return "Safe"
+    elif score >= 40: return "Moderate Risk"
+    else:             return "High Risk"
+
+
 def build_key_factors(signals, fundamentals, indicators, direction):
     """
     Build human-readable explanations of WHY a rating was given.

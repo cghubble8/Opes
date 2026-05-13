@@ -21,6 +21,15 @@
             "config": { "maxDuration": 55 }
         },
         {
+            "src": "api/dividends.py",
+            "use": "@vercel/python"
+        },
+        {
+            "src": "api/top_dividends.py",
+            "use": "@vercel/python",
+            "config": { "maxDuration": 55 }
+        },
+        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -44,6 +53,14 @@
         {
             "src": "/api/macro",
             "dest": "/api/macro.py"
+        },
+        {
+            "src": "/api/dividends",
+            "dest": "/api/dividends.py"
+        },
+        {
+            "src": "/api/topdividends",
+            "dest": "/api/top_dividends.py"
         },
         {
             "handle": "filesystem"

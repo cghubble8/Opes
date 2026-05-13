@@ -1672,3 +1672,355 @@
   opacity: 0.6;
 }
 
+/* ============================================================
+   DIVIDENDS TAB
+   ============================================================ */
+
+.dividends-container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--spacing-lg) 0;
+}
+
+.div-search-row {
+  margin-bottom: var(--spacing-xl);
+}
+
+/* ── Dividend Profile Card ── */
+
+.dividend-profile-card {
+  margin-bottom: var(--spacing-xl);
+}
+
+.div-profile-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.div-profile-symbol {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--gold-primary);
+  margin: 0;
+}
+
+.div-profile-name {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.dividend-profile-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+}
+
+.div-hero-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.div-hero-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.div-stat-large {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.div-stat-large.gold {
+  color: var(--gold-primary);
+}
+
+/* Safety Score Bar */
+
+.safety-score-bar {
+  margin-bottom: var(--spacing-lg);
+}
+
+.safety-score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.safety-score-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.safety-score-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.safety-score-track {
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.safety-score-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+}
+
+.safety-score-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Metrics Row */
+
+.div-metrics-row {
+  display: flex;
+  gap: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.div-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.div-metric-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.div-metric-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Aristocrat Badge */
+
+.dividend-aristocrat-badge {
+  display: inline-block;
+  background: var(--gold-dim);
+  color: var(--gold-light);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-lg);
+}
+
+/* History Chart */
+
+.dividend-history-chart {
+  margin-top: var(--spacing-lg);
+}
+
+.div-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.div-chart-header h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.div-chart-growth {
+  font-size: 0.8rem;
+  color: var(--success-light);
+}
+
+/* No Dividend State */
+
+.no-dividend-card {
+  text-align: center;
+  padding: var(--spacing-xl) 0;
+}
+
+.no-div-icon {
+  font-size: 2rem;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-sm);
+}
+
+.no-div-text {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Top Dividend Stocks Section ── */
+
+.div-top-section {
+  margin-top: var(--spacing-2xl);
+}
+
+.div-top-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-xs);
+}
+
+.div-top-header h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.div-top-subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 var(--spacing-lg);
+}
+
+.dividend-stocks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.dividend-stock-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  cursor: pointer;
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal), transform var(--transition-normal);
+}
+
+.dividend-stock-card:hover {
+  border-color: var(--gold-border);
+  box-shadow: var(--shadow-card), var(--shadow-glow);
+  transform: translateY(-2px);
+}
+
+.div-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+
+.div-card-symbol {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--gold-primary);
+  margin-right: var(--spacing-xs);
+}
+
+.div-card-sector {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.div-card-name {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.div-card-stats {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.div-stat-label {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.div-stat-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.div-stat-value.gold {
+  color: var(--gold-primary);
+}
+
+/* ── Analyze Tab Dividend Flip Card ── */
+
+.indicator-value.gold {
+  color: var(--gold-primary);
+}
+
+.dividend-card-back {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  padding: var(--spacing-md);
+}
+
+.no-dividend-card.indicator-card {
+  opacity: 0.6;
+}
+
+/* ── Mobile Responsive ── */
+
+@media (max-width: 768px) {
+  .dividend-profile-hero {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dividend-stocks-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .div-metrics-row {
+    gap: var(--spacing-md);
+  }
+}
+
+@media (max-width: 640px) {
+  .dividend-profile-hero {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .div-top-header {
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+
+  .dividend-stocks-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+

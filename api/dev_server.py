@@ -7,10 +7,12 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 ROUTES = {
-    '/api/analyze':   'analyze',
-    '/api/topstocks': 'topstocks',
-    '/api/screener':  'screener',
-    '/api/macro':     'macro',
+    '/api/analyze':      'analyze',
+    '/api/topstocks':    'topstocks',
+    '/api/screener':     'screener',
+    '/api/macro':        'macro',
+    '/api/dividends':    'dividends',
+    '/api/topdividends': 'top_dividends',
 }
 
 class DevRouter(BaseHTTPRequestHandler):
@@ -42,5 +44,5 @@ class DevRouter(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     port = 8000
     print(f'API dev server → http://localhost:{port}')
-    print('Routes: /api/analyze  /api/topstocks  /api/screener  /api/macro')
+    print('Routes: /api/analyze  /api/topstocks  /api/screener  /api/macro  /api/dividends  /api/topdividends')
     HTTPServer(('localhost', port), DevRouter).serve_forever()

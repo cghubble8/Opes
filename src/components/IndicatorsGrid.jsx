@@ -19,7 +19,7 @@ const indicatorDefs = {
   },
 }
 
-export default function IndicatorsGrid({ indicators, signals }) {
+export default function IndicatorsGrid({ indicators, signals, fundamentals, symbol, onViewDividends }) {
   const [flippedCards, setFlippedCards] = useState(new Set())
 
   const toggleFlip = (key) => {
@@ -167,6 +167,69 @@ export default function IndicatorsGrid({ indicators, signals }) {
             <div className="flip-card-back-icon">BB</div>
             <div className="flip-card-back-title">{indicatorDefs.bollinger.title}</div>
             <p className="flip-card-back-desc">{indicatorDefs.bollinger.desc}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Dividends */}
+      <div
+        className={`flip-card-wrapper ${flippedCards.has('dividends') ? 'flipped' : ''}`}
+        onClick={() => toggleFlip('dividends')}
+        role="button"
+        tabIndex={0}
+        aria-label="Dividend info — tap to see more"
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleFlip('dividends')}
+      >
+        <div className="flip-card-inner">
+          <div className="flip-card-front">
+            <div className={`card indicator-card ${!fundamentals?.dividend_yield ? 'no-dividend-card' : ''}`}>
+              <span className="flip-hint">ℹ</span>
+              <h3>Dividends</h3>
+              {fundamentals?.dividend_yield ? (
+                <>
+                  <div className="indicator-value gold">{(fundamentals.dividend_yield * 100).toFixed(2)}%</div>
+                  <div className="indicator-signal signal-bullish">Dividend Payer</div>
+                  {fundamentals.dividend_rate != null && (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '8px' }}>
+                      ${fundamentals.dividend_rate.toFixed(2)} / share annually
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="indicator-value" style={{ color: 'var(--text-muted)', fontSize: '1.2rem' }}>—</div>
+                  <div className="indicator-signal" style={{ color: 'var(--text-muted)' }}>No Dividend</div>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flip-card-back dividend-card-back">
+            <div className="flip-card-back-icon">DIV</div>
+            {fundamentals?.dividend_yield ? (
+              <>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '8px 0' }}>
+                  {fundamentals.payout_ratio != null && (
+                    <p style={{ margin: '4px 0' }}>Payout Ratio: {(fundamentals.payout_ratio * 100).toFixed(1)}%</p>
+                  )}
+                  {fundamentals.ex_dividend_date && (
+                    <p style={{ margin: '4px 0' }}>Ex-Div: {fundamentals.ex_dividend_date}</p>
+                  )}
+                </div>
+                {onViewDividends && symbol && (
+                  <button
+                    className="btn-primary"
+                    style={{ marginTop: '12px', fontSize: '0.8rem', padding: '8px 14px' }}
+                    onClick={(e) => { e.stopPropagation(); onViewDividends(symbol); }}
+                  >
+                    View Full Profile →
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="flip-card-back-desc" style={{ color: 'var(--text-muted)' }}>
+                This stock does not currently pay a dividend.
+              </p>
+            )}
           </div>
         </div>
       </div>

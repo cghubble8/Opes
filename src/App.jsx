@@ -4,8 +4,10 @@ import { analyzeStock, setTokenGetter as setAnalyzeTokenGetter } from './service
 import { setTokenGetter as setTopStocksTokenGetter } from './services/topStocks'
 import { setTokenGetter as setScreenerTokenGetter } from './services/screener'
 import { getMacroData, setTokenGetter as setMacroTokenGetter } from './services/macro'
+import { setTokenGetter as setDividendsTokenGetter } from './services/dividends'
 import CandlestickLoader from './components/CandlestickLoader'
 import TopStocks from './components/TopStocks'
+import Dividends from './components/Dividends'
 import Portfolio from './components/Portfolio'
 import Budget from './components/Budget'
 import CompareView from './components/CompareView'
@@ -57,6 +59,7 @@ function App() {
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
   const [currentView, setCurrentView] = useState('market')
+  const [dividendsSymbol, setDividendsSymbol] = useState('')
   const [macroData, setMacroData] = useState(null)
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareData, setCompareData] = useState({})
@@ -68,6 +71,7 @@ function App() {
     setTopStocksTokenGetter(getter)
     setScreenerTokenGetter(getter)
     setMacroTokenGetter(getter)
+    setDividendsTokenGetter(getter)
   }, [getToken])
 
   // Pre-fetch macro data on mount so sector warnings are ready when user analyzes a stock
@@ -120,6 +124,11 @@ function App() {
       delete next[sym]
       return next
     })
+  }
+
+  const handleViewDividends = (sym) => {
+    setDividendsSymbol(sym)
+    setCurrentView('dividends')
   }
 
   const handleRetry = () => handleQuickSearch(symbol)
@@ -189,6 +198,13 @@ function App() {
           >
             Market
           </button>
+          <button
+            className={`nav-tab ${currentView === 'dividends' ? 'active' : ''}`}
+            onClick={() => setCurrentView('dividends')}
+          >
+            <span className="nav-label-desktop">Dividends</span>
+            <span className="nav-label-mobile">Divs</span>
+          </button>
         </nav>
 
         <div className="header-user">
@@ -207,6 +223,14 @@ function App() {
       {/* Top Stocks View */}
       {currentView === 'topstocks' && (
         <TopStocks onStockSelect={handleQuickSearch} />
+      )}
+
+      {/* Dividends View */}
+      {currentView === 'dividends' && (
+        <Dividends
+          onStockSelect={handleQuickSearch}
+          initialSymbol={dividendsSymbol}
+        />
       )}
 
       {/* Portfolio View */}
@@ -316,7 +340,13 @@ function App() {
                 </div>
               )}
 
-              <IndicatorsGrid indicators={data.indicators} signals={data.signals} />
+              <IndicatorsGrid
+                indicators={data.indicators}
+                signals={data.signals}
+                fundamentals={data.fundamentals}
+                symbol={data.symbol}
+                onViewDividends={handleViewDividends}
+              />
 
               <div className="chart-prediction-grid">
                 <PriceChart symbol={data.symbol} chartData={data.chart_data} />
